@@ -1,0 +1,29 @@
+# Copy this file to docker-compose.yml and adjust the values for your host.
+#
+#   cp docker-compose.example.yml docker-compose.yml
+#   # generate a 32-byte base64 key once and write it to .env or your secret store
+#   openssl rand -base64 32
+#   docker compose up -d --build
+
+services:
+  jira-collector:
+    build: .
+    image: jira-collector:latest
+    container_name: jira-collector
+    restart: unless-stopped
+    ports:
+      # Host-side port can be changed (e.g. "8080:3000") if 3000 is in use.
+      - "3000:3000"
+    environment:
+      # 32-byte base64 key. KEEP THIS STABLE — losing it means existing
+      # encrypted Jira tokens become unreadable.
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY is required}
+      # Where the SQLite file lives inside the container; mapped to ./data below.
+      DATABASE_FILE: /data/app.db
+      TZ: Asia/Seoul
+    volumes:
+      # Persistent SQLite state. Back this directory up regularly.
+      - ./data:/data
+    # Resource cap (optional). Single-user app — these are conservative.
+    mem_limit: 512m
+    cpus: 1.0
