@@ -74,6 +74,29 @@ Cloud는 Personal Access Token 대신 **email + API token**(Basic Auth)을 사�
 
 > **Rate limit**: Cloud는 평균 10 req/s 정도가 안전 한계입니다. URL 모드로 너무 많은 이슈를 동시 fetch하면 429가 날 수 있어요 — JQL 한 줄로 묶는 것을 권장.
 
+### 평가용 더미 이슈 만들기
+
+처음 Cloud 와 연동해서 데모하려면 이슈가 몇 개 있어야 합니다. 5개의 Bug 이슈를 한 번에 만들어주는 스크립트가 있습니다:
+
+```bash
+# 1) 프로젝트 키 모를 때 — 보유 프로젝트 목록만 출력
+ATLASSIAN_EMAIL=you@example.com \
+ATLASSIAN_TOKEN=<api-token> \
+JIRA_BASE_URL=https://<your-site>.atlassian.net \
+npm run seed-jira-issues
+
+# 2) 위에서 본 키로 시드 생성
+JIRA_PROJECT_KEY=PROJ \
+ATLASSIAN_EMAIL=you@example.com \
+ATLASSIAN_TOKEN=<api-token> \
+JIRA_BASE_URL=https://<your-site>.atlassian.net \
+npm run seed-jira-issues
+```
+
+생성되는 이슈는 모두 `labels = evaluation` 이 붙으므로 정리하기 쉽습니다:
+- JQL: `project = PROJ AND labels = evaluation`
+- Jira UI 에서 위 JQL 로 검색 후 일괄 삭제 가능
+
 ## 기본 사용 흐름
 
 1. **Jira 서버 추가** — Sidebar → 설정 → Jira 서버 → "서버 추가"

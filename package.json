@@ -13,6 +13,7 @@
     "db:push": "drizzle-kit push",
     "setup": "npm run bootstrap && npm run db:generate && npm run db:migrate",
     "mock-jira": "tsx scripts/mock-jira.ts",
+    "seed-jira-issues": "tsx scripts/seed-jira-issues.ts",
     "test": "node --conditions=react-server --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
