@@ -93,6 +93,16 @@ data/                # SQLite DB 파일 (gitignored)
 
 Next.js 16 · React 19 · TypeScript · Tailwind 4 · Drizzle ORM · better-sqlite3 · TanStack Table/Query · Radix UI · cmdk · sonner
 
+## 테스트
+
+회귀 테스트는 in-memory SQLite를 띄워 DB mutation 로직을 직접 검증합니다.
+
+```bash
+npm test
+```
+
+`tests/dashboard-mutations.test.ts` — 컬럼 가시성 토글이 sources를 지우지 않는지, 부분 업데이트가 다른 필드를 덮지 않는지 등을 보장합니다.
+
 ## 단축키
 
 | 키 | 동작 |
