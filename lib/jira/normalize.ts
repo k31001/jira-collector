@@ -17,6 +17,14 @@ export function normalizeIssue(
   const comments = f.comment?.comments ?? [];
   const lastComment = comments.length > 0 ? comments[comments.length - 1] : undefined;
 
+  // Jira's `resolutiondate` is only populated when the Resolution field is
+  // set, which many Cloud Scrum/Kanban workflows skip when an issue is
+  // transitioned to a Done-category status via the board. Fall back to
+  // `updated` whenever the status category is "done" so the trend chart and
+  // table reflect what the user sees on the board.
+  const isDoneCategory = categoryKey === "done";
+  const resolvedAt = f.resolutiondate ?? (isDoneCategory ? f.updated : undefined);
+
   return {
     serverId: server.id,
     serverName: server.name,
@@ -33,7 +41,7 @@ export function normalizeIssue(
     reporter: f.reporter?.displayName ? { name: f.reporter.displayName } : undefined,
     created: f.created,
     updated: f.updated,
-    resolved: f.resolutiondate ?? undefined,
+    resolved: resolvedAt,
     priority: f.priority?.name,
     issueType: f.issuetype?.name,
     labels: f.labels ?? [],
