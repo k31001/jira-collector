@@ -12,8 +12,6 @@ import {
   type DashboardUpdate,
 } from "@/lib/db/dashboard-mutations";
 
-export type { DashboardInput, DashboardUpdate };
-
 export async function createDashboard(input: DashboardInput) {
   const result = applyCreateDashboard(input);
   revalidatePath("/dashboards", "layout");

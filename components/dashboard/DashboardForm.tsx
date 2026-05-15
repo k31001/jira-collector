@@ -11,11 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SourceEditor, type SourceItem } from "@/components/source-editor/SourceEditor";
 import type { RegisteredServer } from "@/lib/jira/url-parser";
-import {
-  createDashboard,
-  updateDashboard,
-  type DashboardInput,
-} from "@/actions/dashboards";
+import { createDashboard, updateDashboard } from "@/actions/dashboards";
+import type { DashboardInput } from "@/lib/db/dashboard-mutations";
 
 type Props = {
   mode: "create" | "edit";
