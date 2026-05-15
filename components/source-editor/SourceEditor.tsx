@@ -101,10 +101,25 @@ function SourceCard({
   const [testing, startTesting] = useTransition();
 
   async function runTest() {
+    if (!source.jql || !source.jql.trim()) {
+      setTestResult({ ok: false, error: "JQL을 입력하세요" });
+      return;
+    }
+    if (!source.serverId) {
+      setTestResult({ ok: false, error: "서버를 먼저 선택하세요" });
+      return;
+    }
     setTestResult(null);
     startTesting(async () => {
-      const r = await testJql({ serverId: source.serverId, jql: source.jql ?? "" });
-      setTestResult(r);
+      try {
+        const r = await testJql({ serverId: source.serverId, jql: source.jql ?? "" });
+        setTestResult(r);
+      } catch (err) {
+        setTestResult({
+          ok: false,
+          error: err instanceof Error ? err.message : "쿼리 테스트 실패",
+        });
+      }
     });
   }
 
