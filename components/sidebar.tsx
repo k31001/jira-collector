@@ -13,6 +13,7 @@ import {
   Star,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { APP_VERSION } from "@/lib/version";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 type DashboardLink = { id: string; name: string; favorite: boolean };
@@ -117,7 +118,7 @@ export function Sidebar({ dashboards }: { dashboards: DashboardLink[] }) {
       </nav>
 
       <div className="border-t p-3 text-[11px] text-muted-foreground">
-        single-user · local · v0.1
+        single-user · local · v{APP_VERSION}
       </div>
     </aside>
   );

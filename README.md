@@ -1,5 +1,9 @@
 # jira-collector
 
+[![version](https://img.shields.io/badge/version-1.0.0-3B82F6)](CHANGELOG.md)
+[![license](https://img.shields.io/badge/license-MIT-10B981)](#라이센스)
+
+
 여러 Jira 서버(Server/DC + Cloud)에 흩어진 이슈를 **하나의 테이블**에서 통합 조회·관리하고, 이슈별 메모를 인라인으로 편집하면서 트렌드 그래프로 현황을 보는 로컬 단일 사용자 대시보드.
 
 > 보고용 단일 뷰를 빠르고 즐겁게 유지·업데이트하는 게 목표. 외부 의존성 없이 Node + SQLite 파일 하나로 동작합니다.
@@ -39,6 +43,8 @@ npm run mock-jira    # localhost:4567 (Team A), localhost:4568 (Team B)
 
 - **[대시보드 가이드](docs/dashboard-guide.md)** — 첫 사용자 흐름, 소스 추가, 컬럼/필터/노트/내보내기 등 전부
 - **[자체 서버 설치 & 운영 튜토리얼](docs/self-hosting.md)** — Bare Node + systemd / Docker / 리버스 프록시 / 백업 / 업데이트 / 보안
+- **[컨트리뷰션 가이드](CONTRIBUTING.md)** — 개발 셋업, 코드 스타일, **버저닝 정책**, PR 프로세스
+- **[변경 이력 (CHANGELOG)](CHANGELOG.md)**
 
 ## 기술 스택
 
