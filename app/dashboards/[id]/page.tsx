@@ -35,6 +35,7 @@ export default async function DashboardViewPage({
     .all();
 
   const visibleColumns = JSON.parse(dash.visibleColumns) as ColumnKey[];
+  const columnOrder = JSON.parse(dash.columnOrder) as ColumnKey[];
 
   return (
     <>
@@ -74,6 +75,7 @@ export default async function DashboardViewPage({
             dashboardId={dash.id}
             refreshIntervalSec={dash.refreshIntervalSec}
             initialVisibleColumns={visibleColumns}
+            initialColumnOrder={columnOrder}
           />
         </div>
       )}

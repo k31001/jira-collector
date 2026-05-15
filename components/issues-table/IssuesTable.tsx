@@ -13,11 +13,29 @@ import {
   type VisibilityState,
 } from "@tanstack/react-table";
 import {
+  DndContext,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  horizontalListSortingStrategy,
+  useSortable,
+  sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
   ArrowUpDown,
   Columns3,
   Copy,
   Download,
   ExternalLink,
+  GripVertical,
   Loader2,
   RefreshCw,
   Search,
@@ -36,26 +54,37 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { StatusBadge } from "./StatusBadge";
 import { NoteCell } from "./NoteCell";
-import { ALL_COLUMNS, REQUIRED_COLUMNS, type ColumnKey, columnLabel } from "./columns";
+import { StatusStatsBar } from "./StatusStatsBar";
+import { TrendChart } from "./TrendChart";
+import {
+  ALL_COLUMNS,
+  REQUIRED_COLUMNS,
+  columnLabel,
+  reconcileColumnOrder,
+  type ColumnKey,
+} from "./columns";
 import type { DashboardIssuesResult, NormalizedIssue } from "@/lib/jira/types";
-import { formatDate, formatRelative, truncate } from "@/lib/utils";
+import { cn, formatDate, formatRelative, truncate } from "@/lib/utils";
 import { updateDashboard } from "@/actions/dashboards";
 
 type Props = {
   dashboardId: string;
   refreshIntervalSec: number;
   initialVisibleColumns: ColumnKey[];
+  initialColumnOrder: ColumnKey[];
 };
 
 export function IssuesTable({
   dashboardId,
   refreshIntervalSec,
   initialVisibleColumns,
+  initialColumnOrder,
 }: Props) {
   const [search, setSearch] = React.useState("");
   const [sorting, setSorting] = React.useState<SortingState>([
     { id: "updated", desc: true },
   ]);
+  const [statusFilter, setStatusFilter] = React.useState<Set<string>>(new Set());
 
   const [visibility, setVisibility] = React.useState<VisibilityState>(() => {
     const map: VisibilityState = {};
@@ -65,6 +94,11 @@ export function IssuesTable({
     return map;
   });
 
+  const [columnOrder, setColumnOrder] = React.useState<ColumnKey[]>(() =>
+    reconcileColumnOrder(initialColumnOrder),
+  );
+
+  // Persist visibility (debounced)
   React.useEffect(() => {
     const visible = ALL_COLUMNS.filter((c) => visibility[c.key]).map((c) => c.key);
     const sameAsInit =
@@ -77,6 +111,19 @@ export function IssuesTable({
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibility, dashboardId]);
+
+  // Persist column order (debounced)
+  React.useEffect(() => {
+    const sameAsInit =
+      columnOrder.length === initialColumnOrder.length &&
+      columnOrder.every((v, i) => initialColumnOrder[i] === v);
+    if (sameAsInit) return;
+    const t = setTimeout(() => {
+      updateDashboard(dashboardId, { columnOrder }).catch(() => {});
+    }, 700);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columnOrder, dashboardId]);
 
   const query = useQuery<DashboardIssuesResult>({
     queryKey: ["issues", dashboardId],
@@ -127,7 +174,6 @@ export function IssuesTable({
             label={row.original.effectiveStatus.label}
             color={row.original.effectiveStatus.color}
             rawLabel={row.original.rawStatus}
-            groupedFrom={row.original.customStatus ? undefined : undefined}
           />
         ),
         size: 110,
@@ -275,10 +321,16 @@ export function IssuesTable({
   );
 
   const data = query.data?.issues ?? [];
+
+  const afterStatusFilter = React.useMemo(() => {
+    if (statusFilter.size === 0) return data;
+    return data.filter((i) => statusFilter.has(i.effectiveStatus.label));
+  }, [data, statusFilter]);
+
   const filtered = React.useMemo(() => {
-    if (!search.trim()) return data;
+    if (!search.trim()) return afterStatusFilter;
     const lower = search.toLowerCase();
-    return data.filter((i) =>
+    return afterStatusFilter.filter((i) =>
       [
         i.key,
         i.summary,
@@ -293,18 +345,38 @@ export function IssuesTable({
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(lower)),
     );
-  }, [data, search]);
+  }, [afterStatusFilter, search]);
 
   const table = useReactTable({
     data: filtered,
     columns,
-    state: { sorting, columnVisibility: visibility },
+    state: { sorting, columnVisibility: visibility, columnOrder },
     onSortingChange: setSorting,
     onColumnVisibilityChange: setVisibility,
+    onColumnOrderChange: (updater) =>
+      setColumnOrder((prev) =>
+        typeof updater === "function" ? (updater(prev) as ColumnKey[]) : (updater as ColumnKey[]),
+      ),
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
   });
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  function onDragEnd(e: DragEndEvent) {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    setColumnOrder((prev) => {
+      const from = prev.indexOf(active.id as ColumnKey);
+      const to = prev.indexOf(over.id as ColumnKey);
+      if (from === -1 || to === -1) return prev;
+      return arrayMove(prev, from, to);
+    });
+  }
 
   function copyMarkdown() {
     const rows = table.getRowModel().rows;
@@ -345,8 +417,15 @@ export function IssuesTable({
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2 px-6">
+    <div className="flex flex-col gap-0">
+      <TrendChart dashboardId={dashboardId} issues={data} />
+      <StatusStatsBar
+        issues={data}
+        selected={statusFilter}
+        onChange={setStatusFilter}
+      />
+
+      <div className="flex flex-wrap items-center gap-2 px-6 py-2 border-t">
         <div className="relative flex-1 min-w-[200px] max-w-md">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -362,12 +441,11 @@ export function IssuesTable({
           ) : query.data?.fetchedAt ? (
             <>마지막 갱신 {formatRelative(query.data.fetchedAt)}</>
           ) : null}
-          {filtered.length !== data.length && (
+          {filtered.length !== data.length ? (
             <span>· {filtered.length}/{data.length}</span>
-          )}
-          {filtered.length === data.length && data.length > 0 && (
+          ) : data.length > 0 ? (
             <span>· {data.length}개</span>
-          )}
+          ) : null}
         </div>
         <div className="flex-1" />
         <Button variant="outline" size="sm" onClick={() => query.refetch()}>
@@ -407,6 +485,10 @@ export function IssuesTable({
                 )}
               </DropdownMenuCheckboxItem>
             ))}
+            <DropdownMenuSeparator />
+            <div className="px-2 py-1 text-[11px] text-muted-foreground">
+              헤더를 드래그하여 순서를 바꿀 수 있습니다
+            </div>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -421,46 +503,80 @@ export function IssuesTable({
             <Loader2 className="h-4 w-4 animate-spin" /> 이슈 불러오는 중…
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              {table.getHeaderGroups().map((hg) => (
-                <TableRow key={hg.id}>
-                  {hg.headers.map((h) => (
-                    <TableHead key={h.id} style={{ width: h.getSize?.() }}>
-                      {h.isPlaceholder
-                        ? null
-                        : flexRender(h.column.columnDef.header, h.getContext())}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              ))}
-            </TableHeader>
-            <TableBody>
-              {table.getRowModel().rows.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={table.getVisibleLeafColumns().length}
-                    className="py-12 text-center text-muted-foreground"
-                  >
-                    표시할 이슈가 없습니다.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </TableCell>
-                    ))}
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+            <Table>
+              <TableHeader>
+                {table.getHeaderGroups().map((hg) => {
+                  const headerIds = hg.headers.map((h) => h.column.id);
+                  return (
+                    <TableRow key={hg.id}>
+                      <SortableContext items={headerIds} strategy={horizontalListSortingStrategy}>
+                        {hg.headers.map((h) => (
+                          <SortableHeader key={h.id} id={h.column.id}>
+                            {h.isPlaceholder
+                              ? null
+                              : flexRender(h.column.columnDef.header, h.getContext())}
+                          </SortableHeader>
+                        ))}
+                      </SortableContext>
+                    </TableRow>
+                  );
+                })}
+              </TableHeader>
+              <TableBody>
+                {table.getRowModel().rows.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={table.getVisibleLeafColumns().length}
+                      className="py-12 text-center text-muted-foreground"
+                    >
+                      표시할 이슈가 없습니다.
+                    </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ) : (
+                  table.getRowModel().rows.map((row) => (
+                    <TableRow key={row.id}>
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id}>
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </DndContext>
         )}
       </div>
     </div>
+  );
+}
+
+function SortableHeader({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    position: "relative",
+  };
+  return (
+    <TableHead ref={setNodeRef} style={style} className={cn("group", isDragging && "z-10")}>
+      <span className="inline-flex items-center gap-1">
+        <button
+          type="button"
+          className="cursor-grab opacity-0 group-hover:opacity-60 hover:opacity-100 active:cursor-grabbing -ml-1"
+          aria-label="컬럼 이동"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-3 w-3" />
+        </button>
+        {children}
+      </span>
+    </TableHead>
   );
 }
 
