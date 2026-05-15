@@ -23,7 +23,17 @@ const dashboardInputSchema = z.object({
   sources: z.array(sourceSchema).default([]),
 });
 
+const dashboardUpdateSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  description: z.string().optional(),
+  refreshIntervalSec: z.number().int().min(0).max(86_400).optional(),
+  visibleColumns: z.array(z.string()).optional(),
+  columnOrder: z.array(z.string()).optional(),
+  sources: z.array(sourceSchema).optional(),
+});
+
 export type DashboardInput = z.infer<typeof dashboardInputSchema>;
+export type DashboardUpdate = z.infer<typeof dashboardUpdateSchema>;
 
 export async function createDashboard(input: DashboardInput) {
   const data = dashboardInputSchema.parse(input);
@@ -60,8 +70,8 @@ export async function createDashboard(input: DashboardInput) {
   return { id };
 }
 
-export async function updateDashboard(id: string, input: Partial<DashboardInput>) {
-  const next = dashboardInputSchema.partial().parse(input);
+export async function updateDashboard(id: string, input: DashboardUpdate) {
+  const next = dashboardUpdateSchema.parse(input);
   const update: Partial<typeof dashboards.$inferInsert> = {
     updatedAt: Math.floor(Date.now() / 1000),
   };
@@ -69,11 +79,13 @@ export async function updateDashboard(id: string, input: Partial<DashboardInput>
   if (next.description !== undefined) update.description = next.description ?? null;
   if (next.refreshIntervalSec !== undefined)
     update.refreshIntervalSec = next.refreshIntervalSec;
-  if (next.visibleColumns) update.visibleColumns = JSON.stringify(next.visibleColumns);
-  if (next.columnOrder) update.columnOrder = JSON.stringify(next.columnOrder);
+  if (next.visibleColumns !== undefined)
+    update.visibleColumns = JSON.stringify(next.visibleColumns);
+  if (next.columnOrder !== undefined)
+    update.columnOrder = JSON.stringify(next.columnOrder);
   db.update(dashboards).set(update).where(eq(dashboards.id, id)).run();
 
-  if (next.sources) {
+  if (next.sources !== undefined) {
     db.delete(dashboardSources).where(eq(dashboardSources.dashboardId, id)).run();
     next.sources.forEach((s, i) => {
       db
