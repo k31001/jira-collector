@@ -30,6 +30,29 @@ npm run dev
 
 > 첫 실행에서 SQLite 파일이 `data/app.db` 로 생성됩니다. 백업/이동은 이 파일 하나를 옮기면 됩니다.
 
+## Jira 서버가 없어도 데모하기 (Mock Jira)
+
+진짜 Jira 인스턴스가 없어도 전체 흐름을 데모할 수 있도록 두 개의 가짜 Jira 서버를 띄우는 스크립트가 포함되어 있습니다.
+
+```bash
+npm run mock-jira          # 별도 터미널에서 실행 (계속 떠 있어야 함)
+```
+
+- **Team A Jira** → `http://localhost:4567` (프로젝트 `PROJ`, `BUG`)
+- **Team B Jira** → `http://localhost:4568` (프로젝트 `FEAT`)
+
+앱에서 두 서버를 등록할 때:
+- Base URL: 위 두 URL
+- 인증: **Personal Access Token** 선택, PAT 값은 **아무 문자열이나** 입력 (예: `dev-token`)
+- "연결 테스트" → ✓ Demo User
+
+샘플 JQL:
+- `project = PROJ AND status != Done ORDER BY updated DESC`
+- `assignee = currentUser()`
+- `status in ("In Progress", "Resolved")` (커스텀 상태 "이슈 분석 중" 데모용)
+
+지원되는 JQL 절: `project = …`, `status = …`, `status in (…)`, `status != …`, `assignee = currentUser()`, `resolution = Unresolved`, `ORDER BY …`. 그 외는 무시되고 전체가 반환됩니다.
+
 ## 기본 사용 흐름
 
 1. **Jira 서버 추가** — Sidebar → 설정 → Jira 서버 → "서버 추가"
