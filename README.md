@@ -53,6 +53,27 @@ npm run mock-jira          # 별도 터미널에서 실행 (계속 떠 있어야
 
 지원되는 JQL 절: `project = …`, `status = …`, `status in (…)`, `status != …`, `assignee = currentUser()`, `resolution = Unresolved`, `ORDER BY …`. 그 외는 무시되고 전체가 반환됩니다.
 
+## Jira Cloud 와 연동하기
+
+Cloud는 Personal Access Token 대신 **email + API token**(Basic Auth)을 사용합니다. 앱이 이미 지원하므로 셋업만 따라 하면 됩니다.
+
+1. **(없다면) 무료 Cloud 사이트 만들기** — https://www.atlassian.com/try/cloud/signup?bundle=jira-software → 사이트 이름 정하면 `https://<your-site>.atlassian.net` 로 만들어집니다 (무료 플랜은 10명까지).
+2. **API 토큰 발급** — https://id.atlassian.com/manage-profile/security/api-tokens → "Create API token" → 라벨 입력 → 발급된 토큰 복사 (한 번만 보임).
+3. **앱에서 서버 추가** — `/settings/servers` → "서버 추가"
+   - **Name**: 식별용 (예: "Company Cloud")
+   - **Base URL**: `https://<your-site>.atlassian.net` (trailing slash 없이)
+   - **인증 방식**: "Email + API Token (Cloud)" 선택
+   - **이메일**: Atlassian 계정 이메일
+   - **API 토큰**: 위에서 복사한 토큰
+   - "연결 테스트" → ✓ {your name}
+4. **샘플 JQL 로 대시보드 만들기**
+   - `assignee = currentUser() AND statusCategory != Done`
+   - `project = "MYPROJ" AND updated >= -7d ORDER BY updated DESC`
+
+> Cloud는 코멘트 body 를 ADF(JSON) 로 반환합니다. 앱이 자동으로 plain text 로 추출하므로 "최근 코멘트" 컬럼이 정상적으로 표시됩니다.
+
+> **Rate limit**: Cloud는 평균 10 req/s 정도가 안전 한계입니다. URL 모드로 너무 많은 이슈를 동시 fetch하면 429가 날 수 있어요 — JQL 한 줄로 묶는 것을 권장.
+
 ## 기본 사용 흐름
 
 1. **Jira 서버 추가** — Sidebar → 설정 → Jira 서버 → "서버 추가"

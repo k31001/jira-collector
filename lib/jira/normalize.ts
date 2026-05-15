@@ -1,5 +1,6 @@
 import type { RawJiraIssue, NormalizedIssue } from "./types";
 import { buildIssueUrl } from "./url-parser";
+import { commentBodyToText } from "./adf";
 import { resolveStatusDisplay, type StatusContext } from "@/lib/status";
 
 export function normalizeIssue(
@@ -39,7 +40,7 @@ export function normalizeIssue(
     latestComment: lastComment
       ? {
           author: lastComment.author?.displayName,
-          body: lastComment.renderedBody ?? lastComment.body ?? "",
+          body: commentBodyToText(lastComment),
           created: lastComment.created,
         }
       : undefined,

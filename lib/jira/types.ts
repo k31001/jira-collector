@@ -28,7 +28,7 @@ export type RawJiraIssue = {
       comments?: Array<{
         id?: string;
         author?: { displayName?: string };
-        body?: string;
+        body?: unknown; // string (Server/DC) | ADF object (Cloud)
         renderedBody?: string;
         created?: string;
         updated?: string;
