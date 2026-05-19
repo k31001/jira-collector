@@ -1,6 +1,6 @@
 # jira-collector
 
-[![version](https://img.shields.io/badge/version-1.0.0-3B82F6)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-1.1.0-3B82F6)](CHANGELOG.md)
 [![license](https://img.shields.io/badge/license-MIT-10B981)](#라이센스)
 
 
@@ -19,6 +19,7 @@
 - **누적 트렌드 차트 (burn-up)** — 생성 vs 해결 누적, 14/30/60/90일, 1x/1.2x/1.5x/2x 높이, 숨기기 토글
 - **클릭으로 이슈 메모 편집** — 인라인 자동저장, Cmd+Enter / Esc 단축키, 대시보드별 노트
 - **Markdown · CSV 내보내기** — 보고서 만들기 좋게
+- **기간 보고서** — 시작/종료일 선택 후 Markdown 보고서 생성 (신규/해결/기타 업데이트/잔량)
 - **대시보드 즐겨찾기 / 복제 / 삭제**
 - **다크모드 + `Cmd/Ctrl+K` 커맨드 팔레트**
 - **로컬 SQLite** — `data/app.db` 파일 하나, Jira 토큰은 AES-256-GCM 암호화 저장

@@ -10,6 +10,19 @@
 
 ---
 
+## [1.1.0] — 2026-05-19
+
+### Added
+- **기간 보고서** — 대시보드 컨트롤 바의 "기간 보고서" 버튼 → 시작/종료 일자 + 빠른 프리셋(7/14/30/90일) + 노트 포함 토글로 Markdown 보고서 생성. 미리보기 → "Markdown 복사" 또는 ".md 다운로드". 보고서 구성:
+  - 요약 (신규 생성 / 해결 / 기타 업데이트 / 종료 시점 미해결 잔량 + 상태별 분포)
+  - 해결 완료 / 신규(진행 중) / 기타 진행 변경 — 각각 Markdown 표
+  - `resolutiondate` 가 없는 Done 카테고리 이슈도 `updated` 폴백으로 해결로 인정 (트렌드 차트와 동일 규칙)
+- `lib/report.ts` — 순수 함수로 분리된 보고서 빌더. 11개 단위 테스트로 잠금.
+
+[1.1.0]: https://github.com/k31001/jira-collector/releases/tag/v1.1.0
+
+---
+
 ## [1.0.0] — 2026-05-16
 
 최초 공개 릴리스.
@@ -56,5 +69,5 @@
   - `tests/adf.test.ts` — ADF → text 변환
   - `tests/normalize.test.ts` — Done 카테고리 fallback
 
-[Unreleased]: https://github.com/k31001/jira-collector/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/k31001/jira-collector/compare/v1.1.0...HEAD
 [1.0.0]: https://github.com/k31001/jira-collector/releases/tag/v1.0.0

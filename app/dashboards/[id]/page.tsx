@@ -73,6 +73,7 @@ export default async function DashboardViewPage({
         <div className="flex-1 py-4">
           <IssuesTable
             dashboardId={dash.id}
+            dashboardName={dash.name}
             refreshIntervalSec={dash.refreshIntervalSec}
             initialVisibleColumns={visibleColumns}
             initialColumnOrder={columnOrder}

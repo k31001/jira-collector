@@ -31,6 +31,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   ArrowUpDown,
+  CalendarRange,
   Columns3,
   Copy,
   Download,
@@ -56,6 +57,7 @@ import { StatusBadge } from "./StatusBadge";
 import { NoteCell } from "./NoteCell";
 import { StatusStatsBar } from "./StatusStatsBar";
 import { TrendChart } from "./TrendChart";
+import { ReportDialog } from "./ReportDialog";
 import {
   ALL_COLUMNS,
   REQUIRED_COLUMNS,
@@ -69,6 +71,7 @@ import { updateDashboard } from "@/actions/dashboards";
 
 type Props = {
   dashboardId: string;
+  dashboardName: string;
   refreshIntervalSec: number;
   initialVisibleColumns: ColumnKey[];
   initialColumnOrder: ColumnKey[];
@@ -76,10 +79,12 @@ type Props = {
 
 export function IssuesTable({
   dashboardId,
+  dashboardName,
   refreshIntervalSec,
   initialVisibleColumns,
   initialColumnOrder,
 }: Props) {
+  const [reportOpen, setReportOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const [sorting, setSorting] = React.useState<SortingState>([
     { id: "updated", desc: true },
@@ -418,6 +423,12 @@ export function IssuesTable({
 
   return (
     <div className="flex flex-col gap-0">
+      <ReportDialog
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+        dashboardName={dashboardName}
+        issues={data}
+      />
       <TrendChart dashboardId={dashboardId} issues={data} />
       <StatusStatsBar
         issues={data}
@@ -451,6 +462,10 @@ export function IssuesTable({
         <Button variant="outline" size="sm" onClick={() => query.refetch()}>
           <RefreshCw className="h-3.5 w-3.5" />
           새로고침
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => setReportOpen(true)}>
+          <CalendarRange className="h-3.5 w-3.5" />
+          기간 보고서
         </Button>
         <Button variant="outline" size="sm" onClick={copyMarkdown}>
           <Copy className="h-3.5 w-3.5" />
