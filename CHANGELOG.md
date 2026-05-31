@@ -10,6 +10,26 @@
 
 ---
 
+## [1.6.2] — 2026-05-31
+
+### Changed
+- `/docs/*` 페이지 가독성/디자인 전면 개선:
+  - 본문 타이포그래피: 15px / line-height 1.75 / 최적 폭 760px
+  - 헤딩 위계 강화: h1 3xl · h2 2xl + 하단 보더 · h3 lg, h2/h3에 자동 `id` slug + hover 시 `#` 앵커
+  - 인용문: 좌측 primary 색 강조 + 부드러운 muted 배경
+  - 코드: 인라인은 보더+배경으로 강조, 블록은 둥근 모서리+테두리
+  - 표: 헤더 muted 배경 + 짝수 행 zebra 스트라이프
+  - 링크: 색상+밑줄 데코로 즉시 식별
+  - 리스트 마커가 muted-foreground 색으로 차분해짐, 항목 간 간격 확대
+- **우측 sticky 목차** (xl 이상 화면) — h2/h3 자동 추출, IntersectionObserver로 현재 섹션 강조
+- **문서 간 탭** — 페이지 헤더 아래 사용/설치 매뉴얼 칩 (현재 선택된 탭은 primary 강조)
+- 페이지에서 중복 H1 제거: source의 첫 H1을 떼어내고 `PageHeader`의 타이틀만 사용
+- `lib/docs.ts`: `slugify`, `extractToc` 추가 (서버·클라이언트 공유)
+
+[1.6.2]: https://github.com/k31001/jira-collector/releases/tag/v1.6.2
+
+---
+
 ## [1.6.1] — 2026-05-31
 
 ### Changed
@@ -192,5 +212,5 @@
   - `tests/adf.test.ts` — ADF → text 변환
   - `tests/normalize.test.ts` — Done 카테고리 fallback
 
-[Unreleased]: https://github.com/k31001/jira-collector/compare/v1.6.1...HEAD
+[Unreleased]: https://github.com/k31001/jira-collector/compare/v1.6.2...HEAD
 [1.0.0]: https://github.com/k31001/jira-collector/releases/tag/v1.0.0
