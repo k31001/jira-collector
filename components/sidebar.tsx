@@ -4,6 +4,8 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  BookOpen,
+  Download,
   LayoutDashboard,
   Settings,
   Server,
@@ -136,6 +138,28 @@ export function Sidebar({
                 label={d.name}
               />
             ))}
+          </ul>
+        </div>
+
+        <div>
+          <div className="px-2 pb-2">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              도움말
+            </span>
+          </div>
+          <ul className="space-y-0.5">
+            <SidebarLink
+              href="/docs/usage"
+              active={pathname === "/docs/usage"}
+              icon={<BookOpen className="h-4 w-4" />}
+              label="사용 매뉴얼"
+            />
+            <SidebarLink
+              href="/docs/install"
+              active={pathname === "/docs/install"}
+              icon={<Download className="h-4 w-4" />}
+              label="설치 매뉴얼"
+            />
           </ul>
         </div>
 

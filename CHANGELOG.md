@@ -10,6 +10,21 @@
 
 ---
 
+## [1.6.0] — 2026-05-31
+
+### Added
+- **인앱 매뉴얼** — 사이드바에 "도움말" 섹션 추가, 두 개 문서를 인앱에서 직접 렌더링.
+  - `/docs/usage` — 사용 매뉴얼 (`docs/dashboard-guide.md` 렌더)
+  - `/docs/install` — 설치 매뉴얼 (`docs/self-hosting.md` 렌더)
+  - `react-markdown` + `remark-gfm`로 GFM 테이블/체크박스 지원
+  - 각 마크다운 엘리먼트는 앱 디자인에 맞춰 Tailwind로 커스터마이즈 (typography 플러그인 없이)
+  - 외부 링크는 새 탭, 내부 경로는 Next `Link`로 라우팅
+  - 빌드 시 `generateStaticParams`로 두 페이지 모두 정적 생성
+
+[1.6.0]: https://github.com/k31001/jira-collector/releases/tag/v1.6.0
+
+---
+
 ## [1.5.1] — 2026-05-31
 
 ### Fixed
@@ -163,5 +178,5 @@
   - `tests/adf.test.ts` — ADF → text 변환
   - `tests/normalize.test.ts` — Done 카테고리 fallback
 
-[Unreleased]: https://github.com/k31001/jira-collector/compare/v1.5.1...HEAD
+[Unreleased]: https://github.com/k31001/jira-collector/compare/v1.6.0...HEAD
 [1.0.0]: https://github.com/k31001/jira-collector/releases/tag/v1.0.0
