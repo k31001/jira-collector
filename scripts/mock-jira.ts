@@ -67,6 +67,9 @@ const USERS = [
   "Minho Kim",
   "Alex Wong",
   "Soyeon Lee",
+  "Hyunwoo Choi",
+  "Yejin Han",
+  "Daniel Garcia",
 ];
 
 let idCounter = 10001;
@@ -77,6 +80,207 @@ function nextId(): string {
 
 function daysAgo(n: number): string {
   return new Date(Date.now() - n * 24 * 3600 * 1000).toISOString();
+}
+
+/* ------------------------------------------------------------------------
+ * Deterministic randomization helpers — keeps the generated dataset stable
+ * across mock-jira restarts so screenshots / regression checks are useful.
+ * ---------------------------------------------------------------------- */
+
+function mulberry32(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function pick<T>(rng: () => number, arr: readonly T[]): T {
+  return arr[Math.floor(rng() * arr.length)];
+}
+
+function pickWeighted<T>(
+  rng: () => number,
+  items: ReadonlyArray<{ value: T; weight: number }>,
+): T {
+  const total = items.reduce((s, x) => s + x.weight, 0);
+  let r = rng() * total;
+  for (const it of items) {
+    if (r < it.weight) return it.value;
+    r -= it.weight;
+  }
+  return items[items.length - 1].value;
+}
+
+/* ------------------------------------------------------------------------
+ * Distribution tables — tuned so the resolution-time dashboard is visually
+ * interesting: a long tail of slow issues, most resolved within a week, a
+ * meaningful sprinkle of quick-fix bugs.
+ * ---------------------------------------------------------------------- */
+
+type Range = readonly [number, number];
+
+const RESOLUTION_HOURS_BUCKETS: ReadonlyArray<{ value: Range; weight: number }> = [
+  { value: [1, 8], weight: 20 }, // quick fix (< 1d)
+  { value: [8, 24], weight: 25 }, // same day
+  { value: [24, 72], weight: 25 }, // 1–3d
+  { value: [72, 168], weight: 15 }, // 3–7d
+  { value: [168, 336], weight: 10 }, // 1–2w
+  { value: [336, 720], weight: 4 }, // 2w–1mo
+  { value: [720, 2880], weight: 1 }, // 1–4mo long tail
+];
+
+const RESOLVED_AGE_DAYS: ReadonlyArray<{ value: Range; weight: number }> = [
+  { value: [0, 30], weight: 40 },
+  { value: [30, 60], weight: 30 },
+  { value: [60, 120], weight: 20 },
+  { value: [120, 180], weight: 10 },
+];
+
+const ISSUE_TYPE_WEIGHTS = [
+  { value: "Bug", weight: 40 },
+  { value: "Story", weight: 30 },
+  { value: "Task", weight: 20 },
+  { value: "Epic", weight: 10 },
+];
+
+const PRIORITY_WEIGHTS = [
+  { value: "Highest", weight: 10 },
+  { value: "High", weight: 25 },
+  { value: "Medium", weight: 40 },
+  { value: "Low", weight: 20 },
+  { value: "Lowest", weight: 5 },
+];
+
+const STATUS_RESOLVED = ["Done", "Closed", "Resolved"] as const;
+const STATUS_UNRESOLVED = ["To Do", "In Progress", "In Review"] as const;
+
+const LABELS_POOL = [
+  "frontend",
+  "backend",
+  "infra",
+  "design",
+  "ux",
+  "payment",
+  "auth",
+  "i18n",
+  "perf",
+  "security",
+  "mobile",
+  "ios",
+  "android",
+  "admin",
+  "growth",
+  "reporting",
+  "compliance",
+  "urgent",
+  "tech-debt",
+  "refactor",
+];
+
+const COMPONENTS = [
+  "결제 모듈",
+  "로그인",
+  "검색",
+  "관리자 페이지",
+  "리포트",
+  "대시보드",
+  "알림 시스템",
+  "사용자 프로필",
+  "온보딩",
+  "권한 관리",
+  "API",
+  "이메일 발송",
+  "통계",
+  "차트",
+  "캘린더",
+  "댓글",
+  "파일 업로드",
+  "푸시 알림",
+  "결제 환불",
+];
+
+const SUMMARY_TEMPLATES: Array<(c: string) => string> = [
+  (c) => `${c} 성능 개선`,
+  (c) => `${c} 버그 수정`,
+  (c) => `${c} 리팩토링`,
+  (c) => `${c} 신규 기능 추가`,
+  (c) => `${c} 디자인 업데이트`,
+  (c) => `${c} 에러 핸들링 보강`,
+  (c) => `${c} 접근성 개선`,
+  (c) => `${c} 로그 추가`,
+  (c) => `${c} 테스트 커버리지 향상`,
+  (c) => `${c} 응답 시간 단축`,
+];
+
+function generateBulkIssues(opts: {
+  projectKey: string;
+  baseUrl: string;
+  startKey: number;
+  count: number;
+  seed: number;
+}): Issue[] {
+  const rng = mulberry32(opts.seed);
+  const out: Issue[] = [];
+  for (let i = 0; i < opts.count; i++) {
+    const key = `${opts.projectKey}-${opts.startKey + i}`;
+    const isResolved = rng() < 0.7;
+    const summary = pick(rng, SUMMARY_TEMPLATES)(pick(rng, COMPONENTS));
+    const issuetype = pickWeighted(rng, ISSUE_TYPE_WEIGHTS);
+    const priority = pickWeighted(rng, PRIORITY_WEIGHTS);
+
+    const labelCount = Math.floor(rng() * 3); // 0–2 labels
+    const labels: string[] = [];
+    for (let j = 0; j < labelCount; j++) {
+      const lbl = pick(rng, LABELS_POOL);
+      if (!labels.includes(lbl)) labels.push(lbl);
+    }
+
+    const assignee = rng() < 0.88 ? pick(rng, USERS) : null;
+    const reporter = pick(rng, USERS);
+
+    let createdDaysAgo: number;
+    let updatedDaysAgo: number;
+    let status: keyof typeof STATUS_CATEGORIES;
+
+    if (isResolved) {
+      const [hMin, hMax] = pickWeighted(rng, RESOLUTION_HOURS_BUCKETS);
+      const resolutionHours = hMin + rng() * (hMax - hMin);
+      const [aMin, aMax] = pickWeighted(rng, RESOLVED_AGE_DAYS);
+      const resolvedDaysAgo = aMin + rng() * (aMax - aMin);
+      updatedDaysAgo = resolvedDaysAgo;
+      createdDaysAgo = resolvedDaysAgo + resolutionHours / 24;
+      status = pick(rng, STATUS_RESOLVED);
+    } else {
+      createdDaysAgo = rng() * 90;
+      updatedDaysAgo = Math.max(
+        0,
+        createdDaysAgo * (0.2 + rng() * 0.6),
+      );
+      status = pick(rng, STATUS_UNRESOLVED);
+    }
+
+    out.push(
+      makeIssue({
+        baseUrl: opts.baseUrl,
+        key,
+        summary,
+        status,
+        assignee,
+        reporter,
+        priority,
+        issuetype,
+        labels,
+        createdDaysAgo,
+        updatedDaysAgo,
+        resolved: isResolved,
+      }),
+    );
+  }
+  return out;
 }
 
 function makeIssue(input: {
@@ -234,6 +438,20 @@ function seedTeamA(baseUrl: string): Issue[] {
       createdDaysAgo: 1,
       updatedDaysAgo: 1,
     }),
+    ...generateBulkIssues({
+      baseUrl,
+      projectKey: "PROJ",
+      startKey: 1001,
+      count: 30,
+      seed: 0xa5a5a5,
+    }),
+    ...generateBulkIssues({
+      baseUrl,
+      projectKey: "BUG",
+      startKey: 1001,
+      count: 25,
+      seed: 0x424242,
+    }),
   ];
 }
 
@@ -314,6 +532,13 @@ function seedTeamB(baseUrl: string): Issue[] {
       createdDaysAgo: 5,
       updatedDaysAgo: 1,
     }),
+    ...generateBulkIssues({
+      baseUrl,
+      projectKey: "FEAT",
+      startKey: 1001,
+      count: 45,
+      seed: 0xfeed42,
+    }),
   ];
 }
 
@@ -354,6 +579,55 @@ function filterByJql(issues: Issue[], jql: string): Issue[] {
 
   if (/\bresolution\s*=\s*Unresolved/i.test(q)) {
     result = result.filter((i) => !i.fields.resolutiondate);
+  }
+
+  // resolutiondate IS [NOT] EMPTY  (alias: resolved IS [NOT] EMPTY)
+  if (/\b(resolutiondate|resolved)\s+is\s+not\s+empty\b/i.test(q)) {
+    result = result.filter((i) => !!i.fields.resolutiondate);
+  } else if (/\b(resolutiondate|resolved)\s+is\s+empty\b/i.test(q)) {
+    result = result.filter((i) => !i.fields.resolutiondate);
+  }
+
+  // Time-bounded filters. We support the two forms most commonly seen in JQL
+  // for trending dashboards:
+  //   resolved >= -90d      (relative offset)
+  //   resolved >= "2026-01-01"   (absolute ISO date)
+  // Plus the matching <=, and the field aliases resolved/resolutiondate,
+  // created, updated.
+  const TIME_FIELDS: Record<string, (i: Issue) => string | null | undefined> = {
+    resolved: (i) => i.fields.resolutiondate,
+    resolutiondate: (i) => i.fields.resolutiondate,
+    created: (i) => i.fields.created,
+    updated: (i) => i.fields.updated,
+  };
+  const timeRegex =
+    /\b(resolved|resolutiondate|created|updated)\s*(>=|<=|>|<)\s*(-?\d+d|"[^"]+"|'[^']+'|[0-9-]+T?[0-9:.-]*Z?)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = timeRegex.exec(q))) {
+    const field = m[1].toLowerCase() as keyof typeof TIME_FIELDS;
+    const op = m[2];
+    const raw = m[3].replace(/^["']|["']$/g, "");
+    let boundary: number;
+    const rel = raw.match(/^-(\d+)d$/i);
+    if (rel) {
+      boundary = Date.now() - Number(rel[1]) * 24 * 3600 * 1000;
+    } else {
+      const t = Date.parse(raw);
+      if (Number.isNaN(t)) continue;
+      boundary = t;
+    }
+    const getter = TIME_FIELDS[field];
+    result = result.filter((i) => {
+      const v = getter(i);
+      if (!v) return false;
+      const t = Date.parse(v);
+      if (Number.isNaN(t)) return false;
+      if (op === ">=") return t >= boundary;
+      if (op === ">") return t > boundary;
+      if (op === "<=") return t <= boundary;
+      if (op === "<") return t < boundary;
+      return true;
+    });
   }
 
   const order = q.match(/ORDER\s+BY\s+(\w+)\s+(ASC|DESC)?/i);

@@ -10,6 +10,100 @@
 
 ---
 
+## [1.5.1] — 2026-05-31
+
+### Fixed
+- 시계열 차트의 마일스톤 라벨이 chart 안쪽에 그려져 어색하던 문제. 라벨을 `position="top"`으로 chart 위로 빼되, `margin.top`을 44px로 늘려 범례와 라벨 사이에 충분한 수직 공간을 확보. 라벨은 chart 영역 위쪽 외부에 표시되고 범례와 겹치지 않음.
+
+[1.5.1]: https://github.com/k31001/jira-collector/releases/tag/v1.5.1
+
+---
+
+## [1.5.0] — 2026-05-31
+
+### Added
+- **히스토그램 stacked 모드** — 해결 시간 분포 차트 기본값이 "전체 (누적)"로 변경. 모든 JQL의 카운트가 빈마다 색상별로 stack되어 한눈에 비교 가능. 셀렉트에서 특정 JQL을 선택하면 그 소스의 막대만 표시. stacked 모드에서는 색상 segment를 클릭하면 해당 JQL의 그 빈에 속한 이슈가 모달로 열림.
+- **이슈 테이블 페이지네이션** — `/dashboards/[id]`의 기본 이슈 테이블에 페이지당 10/30/60개 옵션 + 첫/이전/다음/마지막 페이지 네비게이션. 페이지 크기는 `localStorage`에 대시보드별로 저장. 검색/필터/데이터가 바뀌면 첫 페이지로 자동 리셋.
+
+[1.5.0]: https://github.com/k31001/jira-collector/releases/tag/v1.5.0
+
+---
+
+## [1.4.2] — 2026-05-31
+
+### Fixed
+- 시계열 차트에서 같은 버킷(같은 x 좌표)에 떨어진 마일스톤이 라벨 텍스트까지 동일할 경우 두 개가 정확히 겹쳐 하나만 보이던 문제. 이제 버킷 내 stack-index를 부여해 라벨을 수직 stagger, 라인은 `strokeDashoffset`로 대시 패턴을 어긋나게 그려 두 색이 모두 보이도록 함.
+- 마일스톤 라벨이 chart 상단의 JQL 범례 wrapper와 시각적으로 겹치던 문제. 라벨을 `position="insideTop"`으로 chart 안쪽으로 이동, 범례 wrapper는 `top: -6`으로 살짝 위로 띄움.
+
+[1.4.2]: https://github.com/k31001/jira-collector/releases/tag/v1.4.2
+
+---
+
+## [1.4.1] — 2026-05-31
+
+### Fixed
+- 해결 시간 대시보드 편집 화면에서 마일스톤을 추가/수정해도 저장되지 않던 두 가지 버그를 모두 수정.
+  1. `applyUpdateResolutionDashboard`의 source 재삽입 SQL에서 `milestones` 컬럼이 빠져있었음 → UPDATE 경로에서만 마일스톤이 사라짐
+  2. `resolutionDashboardUpdateSchema`가 `.partial()`로 정의돼 child 필드의 `.default([])`가 그대로 살아남아, `sources`를 보내지 않은 partial update에서도 빈 배열로 강제 변환 → 기존 모든 sources(따라서 마일스톤)가 삭제됨. 기존 `dashboardUpdateSchema`와 동일 패턴으로 모든 필드에 `.optional()` 명시.
+- 회귀 테스트 3개 추가 (`tests/resolution-mutations.test.ts`).
+
+[1.4.1]: https://github.com/k31001/jira-collector/releases/tag/v1.4.1
+
+---
+
+## [1.4.0] — 2026-05-31
+
+### Added
+- **JQL별 마일스톤** — 각 JQL 소스마다 마일스톤(이름 + 날짜) 여러 개를 등록할 수 있고, 시계열 차트에 소스 컬러의 수직선으로 표시됨. 릴리즈/정책 변경 시점과 평균 해결 시간 변화를 함께 볼 수 있어 인과 추론에 유용.
+  - DB: `resolution_dashboard_sources.milestones` JSON 컬럼 추가 (`[{name, date}]`)
+  - 폼: 각 JQL 카드 내부에 "마일스톤" 섹션 (이름 input + 날짜 input + 삭제 버튼)
+  - 차트: recharts `ReferenceLine` 대시 라인, 같은 버킷에 여러 마일스톤이 있으면 라벨이 자동 stagger
+  - 윈도 밖의 마일스톤은 자동으로 숨겨짐
+- `lib/resolution-time.ts`: `findBucketLabelForDate` 헬퍼 — 임의 날짜를 현재 시간축 버킷 라벨로 매핑. 2개 단위 테스트로 잠금.
+
+[1.4.0]: https://github.com/k31001/jira-collector/releases/tag/v1.4.0
+
+---
+
+## [1.3.0] — 2026-05-31
+
+### Added
+- **분기(quarter) 시계열 버킷** — 평균 해결 시간 추이 차트를 일/주/월/분기로 볼 수 있음. 라벨은 `YYYY-QN` 포맷.
+- **오래 걸린 이슈 분석 카드** (`LongTailTable`) — 해결 시간이 임계값(일)을 초과한 이슈를 분석하기 위한 전용 섹션. 분석 워크플로 지원:
+  - 임계값 입력 + 빠른 프리셋 (7/14/30/90일), `localStorage`에 대시보드별로 저장
+  - 소스 필터 (전체 또는 특정 JQL만)
+  - 정렬: 느림 배율 / 해결 시간 / 해결일 / 우선순위
+  - **차원별 상위 3개 분포** — 라벨/담당자/타입/우선순위/상태 각 패턴을 한눈에 확인 (예: "슬로우 이슈의 60%가 `payment` 라벨")
+  - **느림 배율** 컬럼 — `resolutionHours / median` 값을 색상으로 강조 (5x↑ 빨강, 3x↑ 호박)
+  - **최근 코멘트** 컬럼 — 왜 오래 걸렸는지 단서 즉시 노출
+  - **Markdown 복사** — 분석 doc/노션에 붙여넣을 수 있는 구조화된 요약(요약 통계 + 차원 분포 + 이슈 표)
+- `lib/resolution-time.ts`: `flattenResolvedWithSource`, `dimensionBreakdown`, `slowFactor` 헬퍼 추가, 4개 단위 테스트로 잠금.
+
+### Changed
+- `mock-jira.ts`: 시드 RNG로 100개 자동 생성 이슈 + JQL 파서가 `resolved >= -90d`, `created >= "2026-01-01"`, `resolutiondate is not empty` 같은 시간 조건을 인식.
+- `lib/utils.ts` `formatDate`: `hourCycle: "h23"`로 강제해서 SSR/클라이언트 간 AM/PM 로케일 차이로 인한 hydration mismatch 해소.
+
+[1.3.0]: https://github.com/k31001/jira-collector/releases/tag/v1.3.0
+
+---
+
+## [1.2.0] — 2026-05-31
+
+### Added
+- **해결 시간 대시보드** (`/resolution-time`) — 여러 JQL의 평균 해결 시간(Resolution Time)을 한 화면에서 비교하고 추세를 추적하는 새 대시보드 타입.
+  - 소스별 요약 카드 (평균 / 중앙값 / P90 / 해결-전체 비율)
+  - 시계열 라인 차트 — 일/주/월 단위, 30~365일 윈도 선택, 여러 JQL을 동일 축에서 비교
+  - 해결 시간 히스토그램 — 막대 클릭 시 해당 구간의 이슈가 모달로 표시되어 "오래 걸린 이슈" 즉시 진단 가능
+  - JQL별 **스마트 필터** (상태 / 담당자 / 타입 / 우선순위 / 라벨 / 보고자) — Rich Filter의 Smart Filter 패턴 차용. 각 facet은 실제 데이터에서 값과 카운트가 자동으로 채워지고, 선택은 `localStorage`에 대시보드별로 저장됨.
+  - 각 JQL은 라벨 + 컬러로 구분되고 차트에서 동일 컬러로 표시
+  - 대시보드 단위 설정(윈도/버킷)은 DB에 자동 저장
+- `lib/resolution-time.ts` — 평균/중앙값/P90, 히스토그램, 시계열, facet 집계의 순수 함수 모음. 24개 단위 테스트로 잠금.
+- 사이드바에 "해결 시간" 섹션 추가, 즐겨찾기 토글 지원.
+
+[1.2.0]: https://github.com/k31001/jira-collector/releases/tag/v1.2.0
+
+---
+
 ## [1.1.0] — 2026-05-19
 
 ### Added
@@ -69,5 +163,5 @@
   - `tests/adf.test.ts` — ADF → text 변환
   - `tests/normalize.test.ts` — Done 카테고리 fallback
 
-[Unreleased]: https://github.com/k31001/jira-collector/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/k31001/jira-collector/compare/v1.5.1...HEAD
 [1.0.0]: https://github.com/k31001/jira-collector/releases/tag/v1.0.0

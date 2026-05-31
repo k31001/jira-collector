@@ -1,0 +1,552 @@
+/**
+ * Pure aggregation helpers for the Resolution Time dashboard.
+ *
+ * - calculateResolutionHours: created→resolved in hours (null if not resolved)
+ * - buildHistogram: bucket resolution times into duration ranges
+ * - buildTimeSeries: bucket resolved issues by their resolved-on date, compute
+ *   per-bucket average resolution time
+ * - buildFacets / applyFacets: facet-style "smart filters" (Status / Assignee
+ *   / Type / Priority / Label) per source
+ *
+ * All functions are framework-free so they can be unit tested directly.
+ */
+import type { NormalizedIssue } from "@/lib/jira/types";
+
+export const MS_PER_HOUR = 3600 * 1000;
+export const MS_PER_DAY = 24 * MS_PER_HOUR;
+
+export type ResolvedIssue = NormalizedIssue & {
+  resolutionHours: number;
+};
+
+/** Resolution duration in hours. Returns null if the issue is not resolved. */
+export function calculateResolutionHours(issue: NormalizedIssue): number | null {
+  if (!issue.created || !issue.resolved) return null;
+  const c = Date.parse(issue.created);
+  const r = Date.parse(issue.resolved);
+  if (!Number.isFinite(c) || !Number.isFinite(r)) return null;
+  if (r < c) return 0;
+  return (r - c) / MS_PER_HOUR;
+}
+
+/** Returns only resolved issues with `resolutionHours` attached. */
+export function withResolutionHours(issues: NormalizedIssue[]): ResolvedIssue[] {
+  const out: ResolvedIssue[] = [];
+  for (const i of issues) {
+    const h = calculateResolutionHours(i);
+    if (h === null) continue;
+    out.push({ ...i, resolutionHours: h });
+  }
+  return out;
+}
+
+export function average(nums: number[]): number {
+  if (nums.length === 0) return 0;
+  let s = 0;
+  for (const n of nums) s += n;
+  return s / nums.length;
+}
+
+export function median(nums: number[]): number {
+  if (nums.length === 0) return 0;
+  const sorted = [...nums].sort((a, b) => a - b);
+  const m = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 0) return (sorted[m - 1] + sorted[m]) / 2;
+  return sorted[m];
+}
+
+export function percentile(nums: number[], p: number): number {
+  if (nums.length === 0) return 0;
+  const sorted = [...nums].sort((a, b) => a - b);
+  const rank = (p / 100) * (sorted.length - 1);
+  const lo = Math.floor(rank);
+  const hi = Math.ceil(rank);
+  if (lo === hi) return sorted[lo];
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (rank - lo);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Histogram                                                                  */
+/* -------------------------------------------------------------------------- */
+
+export type HistogramBin = {
+  /** Lower bound in hours, inclusive */
+  fromHours: number;
+  /** Upper bound in hours, exclusive (`null` for the open-ended last bin) */
+  toHours: number | null;
+  label: string;
+  count: number;
+  /** Issue keys (and serverId) for issues that fell in this bin */
+  issues: ResolvedIssue[];
+};
+
+function formatBinLabel(fromHours: number, toHours: number | null): string {
+  const fmt = (h: number) => {
+    if (h < 24) return `${Math.round(h)}h`;
+    const d = h / 24;
+    return d < 10 ? `${d.toFixed(1)}d` : `${Math.round(d)}d`;
+  };
+  if (toHours === null) return `${fmt(fromHours)}+`;
+  return `${fmt(fromHours)}–${fmt(toHours)}`;
+}
+
+/**
+ * Bucket resolved issues into bins of `bucketHours` width. We use a fixed
+ * number of bins (default 12) so the histogram stays readable; everything past
+ * the last bin lands in an open-ended overflow bin.
+ */
+export function buildHistogram(
+  issues: ResolvedIssue[],
+  bucketHours: number,
+  bins: number = 12,
+): HistogramBin[] {
+  const out: HistogramBin[] = [];
+  for (let i = 0; i < bins; i++) {
+    const from = i * bucketHours;
+    const to = (i + 1) * bucketHours;
+    out.push({
+      fromHours: from,
+      toHours: to,
+      label: formatBinLabel(from, to),
+      count: 0,
+      issues: [],
+    });
+  }
+  const overflowFrom = bins * bucketHours;
+  out.push({
+    fromHours: overflowFrom,
+    toHours: null,
+    label: formatBinLabel(overflowFrom, null),
+    count: 0,
+    issues: [],
+  });
+
+  for (const issue of issues) {
+    const h = issue.resolutionHours;
+    let idx = Math.floor(h / bucketHours);
+    if (idx >= bins) idx = bins; // overflow
+    if (idx < 0) idx = 0;
+    out[idx].issues.push(issue);
+    out[idx].count += 1;
+  }
+  return out;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Time series                                                                */
+/* -------------------------------------------------------------------------- */
+
+export type TimeBucket = "day" | "week" | "month" | "quarter";
+
+export type TimeSeriesPoint = {
+  /** ISO date for the bucket start (yyyy-mm-dd) */
+  date: string;
+  /** Display label (e.g., "05-30" or "2026-W22") */
+  label: string;
+  /** Average resolution time, in hours; null if there were no resolved issues */
+  avgHours: number | null;
+  median: number | null;
+  p90: number | null;
+  count: number;
+};
+
+function startOfDay(d: Date): Date {
+  const out = new Date(d);
+  out.setHours(0, 0, 0, 0);
+  return out;
+}
+
+function startOfWeek(d: Date): Date {
+  const out = startOfDay(d);
+  // ISO week: Monday = 1, Sunday = 7
+  const dow = (out.getDay() + 6) % 7; // shift so Monday = 0
+  out.setDate(out.getDate() - dow);
+  return out;
+}
+
+function startOfMonth(d: Date): Date {
+  const out = startOfDay(d);
+  out.setDate(1);
+  return out;
+}
+
+function startOfQuarter(d: Date): Date {
+  const out = startOfMonth(d);
+  const q = Math.floor(out.getMonth() / 3);
+  out.setMonth(q * 3);
+  return out;
+}
+
+function bucketStart(d: Date, bucket: TimeBucket): Date {
+  if (bucket === "day") return startOfDay(d);
+  if (bucket === "week") return startOfWeek(d);
+  if (bucket === "month") return startOfMonth(d);
+  return startOfQuarter(d);
+}
+
+function advance(d: Date, bucket: TimeBucket): Date {
+  const out = new Date(d);
+  if (bucket === "day") out.setDate(out.getDate() + 1);
+  else if (bucket === "week") out.setDate(out.getDate() + 7);
+  else if (bucket === "month") out.setMonth(out.getMonth() + 1);
+  else out.setMonth(out.getMonth() + 3);
+  return out;
+}
+
+function isoDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
+
+function bucketLabel(d: Date, bucket: TimeBucket): string {
+  if (bucket === "quarter") {
+    const q = Math.floor(d.getMonth() / 3) + 1;
+    return `${d.getFullYear()}-Q${q}`;
+  }
+  if (bucket === "month") {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }
+  if (bucket === "week") {
+    // Display as MM-DD (week start)
+    return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+      d.getDate(),
+    ).padStart(2, "0")}`;
+  }
+  return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate(),
+  ).padStart(2, "0")}`;
+}
+
+/**
+ * Build a series of time buckets covering the last `windowDays` days, with the
+ * average resolution time (in hours) of issues that were *resolved* in each
+ * bucket. Useful to track whether resolution time is trending up or down.
+ */
+export function buildTimeSeries(
+  issues: ResolvedIssue[],
+  windowDays: number,
+  bucket: TimeBucket,
+  now: Date = new Date(),
+): TimeSeriesPoint[] {
+  const end = bucketStart(now, bucket);
+  const startBoundary = new Date(end);
+  startBoundary.setDate(startBoundary.getDate() - windowDays + 1);
+  const start = bucketStart(startBoundary, bucket);
+
+  const buckets: TimeSeriesPoint[] = [];
+  const indexByKey = new Map<string, number>();
+  let cursor = new Date(start);
+  while (cursor <= end) {
+    const key = isoDate(cursor);
+    indexByKey.set(key, buckets.length);
+    buckets.push({
+      date: key,
+      label: bucketLabel(cursor, bucket),
+      avgHours: null,
+      median: null,
+      p90: null,
+      count: 0,
+    });
+    cursor = advance(cursor, bucket);
+  }
+
+  const samples: number[][] = buckets.map(() => []);
+  for (const issue of issues) {
+    if (!issue.resolved) continue;
+    const resolvedAt = new Date(issue.resolved);
+    if (Number.isNaN(resolvedAt.getTime())) continue;
+    const b = bucketStart(resolvedAt, bucket);
+    const key = isoDate(b);
+    const idx = indexByKey.get(key);
+    if (idx === undefined) continue;
+    samples[idx].push(issue.resolutionHours);
+  }
+
+  for (let i = 0; i < buckets.length; i++) {
+    const arr = samples[i];
+    if (arr.length === 0) continue;
+    buckets[i].avgHours = average(arr);
+    buckets[i].median = median(arr);
+    buckets[i].p90 = percentile(arr, 90);
+    buckets[i].count = arr.length;
+  }
+  return buckets;
+}
+
+/**
+ * Map a calendar date to the matching bucket label in the given time series.
+ * Returns null if the date falls outside the series window.
+ *
+ * Used by the time-series chart to anchor milestone ReferenceLines to the
+ * correct category position on the X axis.
+ */
+export function findBucketLabelForDate(
+  date: Date,
+  points: ReadonlyArray<{ date: string; label: string }>,
+): string | null {
+  if (points.length === 0) return null;
+  const target = date.getTime();
+  if (!Number.isFinite(target)) return null;
+  const firstStart = new Date(points[0].date).getTime();
+  if (target < firstStart) return null;
+  let lastMatch: string | null = null;
+  for (const p of points) {
+    const t = new Date(p.date).getTime();
+    if (t <= target) lastMatch = p.label;
+    else break;
+  }
+  return lastMatch;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Smart filters (facets)                                                     */
+/* -------------------------------------------------------------------------- */
+
+export type FacetField =
+  | "status"
+  | "assignee"
+  | "issueType"
+  | "priority"
+  | "labels"
+  | "reporter";
+
+export type Facets = {
+  status: { value: string; count: number }[];
+  assignee: { value: string; count: number }[];
+  issueType: { value: string; count: number }[];
+  priority: { value: string; count: number }[];
+  labels: { value: string; count: number }[];
+  reporter: { value: string; count: number }[];
+};
+
+export type FacetSelection = Partial<Record<FacetField, string[]>>;
+
+/** Aggregate field-value counts. Useful to populate filter dropdowns. */
+export function buildFacets(issues: NormalizedIssue[]): Facets {
+  const counts: Record<FacetField, Map<string, number>> = {
+    status: new Map(),
+    assignee: new Map(),
+    issueType: new Map(),
+    priority: new Map(),
+    labels: new Map(),
+    reporter: new Map(),
+  };
+  for (const i of issues) {
+    bump(counts.status, i.effectiveStatus.label);
+    bump(counts.assignee, i.assignee?.name ?? "(미할당)");
+    bump(counts.reporter, i.reporter?.name ?? "(미상)");
+    bump(counts.issueType, i.issueType ?? "(미상)");
+    bump(counts.priority, i.priority ?? "(미상)");
+    for (const l of i.labels) bump(counts.labels, l);
+  }
+  return {
+    status: toEntries(counts.status),
+    assignee: toEntries(counts.assignee),
+    issueType: toEntries(counts.issueType),
+    priority: toEntries(counts.priority),
+    labels: toEntries(counts.labels),
+    reporter: toEntries(counts.reporter),
+  };
+}
+
+function bump(m: Map<string, number>, k: string) {
+  m.set(k, (m.get(k) ?? 0) + 1);
+}
+
+function toEntries(m: Map<string, number>): { value: string; count: number }[] {
+  return [...m.entries()]
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+}
+
+/**
+ * Keeps only the issues whose facet values match all active selections.
+ * Multiple values within the same facet are OR'd, distinct facets are AND'd.
+ */
+export function applyFacets(
+  issues: NormalizedIssue[],
+  selection: FacetSelection,
+): NormalizedIssue[] {
+  const checks: ((i: NormalizedIssue) => boolean)[] = [];
+  if (selection.status && selection.status.length > 0) {
+    const set = new Set(selection.status);
+    checks.push((i) => set.has(i.effectiveStatus.label));
+  }
+  if (selection.assignee && selection.assignee.length > 0) {
+    const set = new Set(selection.assignee);
+    checks.push((i) => set.has(i.assignee?.name ?? "(미할당)"));
+  }
+  if (selection.reporter && selection.reporter.length > 0) {
+    const set = new Set(selection.reporter);
+    checks.push((i) => set.has(i.reporter?.name ?? "(미상)"));
+  }
+  if (selection.issueType && selection.issueType.length > 0) {
+    const set = new Set(selection.issueType);
+    checks.push((i) => set.has(i.issueType ?? "(미상)"));
+  }
+  if (selection.priority && selection.priority.length > 0) {
+    const set = new Set(selection.priority);
+    checks.push((i) => set.has(i.priority ?? "(미상)"));
+  }
+  if (selection.labels && selection.labels.length > 0) {
+    const set = new Set(selection.labels);
+    checks.push((i) => i.labels.some((l) => set.has(l)));
+  }
+  if (checks.length === 0) return issues;
+  return issues.filter((i) => checks.every((c) => c(i)));
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Source helpers                                                             */
+/* -------------------------------------------------------------------------- */
+
+export type SourceStats = {
+  total: number;
+  resolved: number;
+  unresolved: number;
+  avgHours: number | null;
+  medianHours: number | null;
+  p90Hours: number | null;
+};
+
+export function statsForSource(resolved: ResolvedIssue[], total: number): SourceStats {
+  if (resolved.length === 0) {
+    return {
+      total,
+      resolved: 0,
+      unresolved: total,
+      avgHours: null,
+      medianHours: null,
+      p90Hours: null,
+    };
+  }
+  const hours = resolved.map((r) => r.resolutionHours);
+  return {
+    total,
+    resolved: resolved.length,
+    unresolved: total - resolved.length,
+    avgHours: average(hours),
+    medianHours: median(hours),
+    p90Hours: percentile(hours, 90),
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Long-tail (slow issue) analysis                                            */
+/* -------------------------------------------------------------------------- */
+
+export type LabeledResolvedIssue = ResolvedIssue & {
+  sourceId: string;
+  sourceLabel: string;
+  sourceColor: string;
+};
+
+/**
+ * Flatten per-source resolved arrays into a single list, tagging each issue
+ * with its source label so the long-tail table can show source attribution.
+ */
+export function flattenResolvedWithSource(
+  perSource: ReadonlyArray<{
+    sourceId: string;
+    sourceLabel: string;
+    sourceColor: string;
+    resolved: ResolvedIssue[];
+  }>,
+): LabeledResolvedIssue[] {
+  const out: LabeledResolvedIssue[] = [];
+  for (const ps of perSource) {
+    for (const r of ps.resolved) {
+      out.push({
+        ...r,
+        sourceId: ps.sourceId,
+        sourceLabel: ps.sourceLabel,
+        sourceColor: ps.sourceColor,
+      });
+    }
+  }
+  return out;
+}
+
+export type DimensionBreakdownEntry = {
+  value: string;
+  count: number;
+  /** Fraction of the slow set this value accounts for (0..1). */
+  share: number;
+};
+
+export type DimensionBreakdown = {
+  status: DimensionBreakdownEntry[];
+  assignee: DimensionBreakdownEntry[];
+  issueType: DimensionBreakdownEntry[];
+  priority: DimensionBreakdownEntry[];
+  labels: DimensionBreakdownEntry[];
+};
+
+function breakdownEntries(
+  m: Map<string, number>,
+  total: number,
+  topN: number,
+): DimensionBreakdownEntry[] {
+  return [...m.entries()]
+    .map(([value, count]) => ({
+      value,
+      count,
+      share: total > 0 ? count / total : 0,
+    }))
+    .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value))
+    .slice(0, topN);
+}
+
+/**
+ * For a slow-issue set, return the top N most common values per facet so the
+ * user can spot dominant patterns at a glance (e.g., "60% of slow issues are
+ * tagged `payment`").
+ */
+export function dimensionBreakdown(
+  issues: ReadonlyArray<NormalizedIssue>,
+  topN: number = 3,
+): DimensionBreakdown {
+  const counts: Record<keyof DimensionBreakdown, Map<string, number>> = {
+    status: new Map(),
+    assignee: new Map(),
+    issueType: new Map(),
+    priority: new Map(),
+    labels: new Map(),
+  };
+  for (const i of issues) {
+    bump(counts.status, i.effectiveStatus.label);
+    bump(counts.assignee, i.assignee?.name ?? "(미할당)");
+    bump(counts.issueType, i.issueType ?? "(미상)");
+    bump(counts.priority, i.priority ?? "(미상)");
+    for (const l of i.labels) bump(counts.labels, l);
+  }
+  const total = issues.length;
+  return {
+    status: breakdownEntries(counts.status, total, topN),
+    assignee: breakdownEntries(counts.assignee, total, topN),
+    issueType: breakdownEntries(counts.issueType, total, topN),
+    priority: breakdownEntries(counts.priority, total, topN),
+    labels: breakdownEntries(counts.labels, total, topN),
+  };
+}
+
+/**
+ * "Slow factor" = how many times slower than the population median this
+ * issue resolved. Returns 1.0 when median is 0 (degenerate set).
+ */
+export function slowFactor(hours: number, medianHours: number): number {
+  if (medianHours <= 0) return 1;
+  return hours / medianHours;
+}
+
+/** Pretty-print hours like `36h` or `2.5d`. */
+export function formatHours(h: number | null | undefined): string {
+  if (h === null || h === undefined || !Number.isFinite(h)) return "—";
+  if (h < 1) return `${Math.round(h * 60)}m`;
+  if (h < 24) return `${h.toFixed(1)}h`;
+  const d = h / 24;
+  if (d < 10) return `${d.toFixed(1)}d`;
+  return `${Math.round(d)}d`;
+}

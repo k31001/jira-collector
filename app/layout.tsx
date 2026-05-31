@@ -7,7 +7,10 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Sidebar } from "@/components/sidebar";
 import { CommandPalette } from "@/components/command-palette";
 import { db } from "@/lib/db/client";
-import { dashboards as dashboardsTable } from "@/lib/db/schema";
+import {
+  dashboards as dashboardsTable,
+  resolutionDashboards as resolutionDashboardsTable,
+} from "@/lib/db/schema";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -30,13 +33,22 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const dashboards = await db
-    .select({
-      id: dashboardsTable.id,
-      name: dashboardsTable.name,
-      favorite: dashboardsTable.favorite,
-    })
-    .from(dashboardsTable);
+  const [dashboards, resolutionDashboards] = await Promise.all([
+    db
+      .select({
+        id: dashboardsTable.id,
+        name: dashboardsTable.name,
+        favorite: dashboardsTable.favorite,
+      })
+      .from(dashboardsTable),
+    db
+      .select({
+        id: resolutionDashboardsTable.id,
+        name: resolutionDashboardsTable.name,
+        favorite: resolutionDashboardsTable.favorite,
+      })
+      .from(resolutionDashboardsTable),
+  ]);
 
   return (
     <html
@@ -49,7 +61,10 @@ export default async function RootLayout({
           <QueryProvider>
             <TooltipProvider delayDuration={150}>
               <div className="flex min-h-screen">
-                <Sidebar dashboards={dashboards} />
+                <Sidebar
+                  dashboards={dashboards}
+                  resolutionDashboards={resolutionDashboards}
+                />
                 <main className="flex-1 min-w-0 flex flex-col">{children}</main>
               </div>
               <CommandPalette dashboards={dashboards} />

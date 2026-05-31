@@ -9,12 +9,16 @@ export function formatDate(value: string | number | Date | null | undefined): st
   if (!value) return "—";
   const d = typeof value === "number" || typeof value === "string" ? new Date(value) : value;
   if (Number.isNaN(d.getTime())) return "—";
+  // hourCycle h23 forces 24-hour clock; without it the SSR (Node ICU) and
+  // client (browser ICU) render AM/PM markers differently and React 19 logs
+  // hydration mismatches.
   return d.toLocaleString("ko-KR", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    hourCycle: "h23",
   });
 }
 

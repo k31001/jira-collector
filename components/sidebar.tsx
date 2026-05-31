@@ -11,6 +11,7 @@ import {
   Tag,
   PlusCircle,
   Star,
+  Timer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { APP_VERSION } from "@/lib/version";
@@ -18,7 +19,13 @@ import { ThemeToggle } from "@/components/theme-toggle";
 
 type DashboardLink = { id: string; name: string; favorite: boolean };
 
-export function Sidebar({ dashboards }: { dashboards: DashboardLink[] }) {
+export function Sidebar({
+  dashboards,
+  resolutionDashboards,
+}: {
+  dashboards: DashboardLink[];
+  resolutionDashboards: DashboardLink[];
+}) {
   const pathname = usePathname();
 
   const sorted = React.useMemo(() => {
@@ -27,6 +34,13 @@ export function Sidebar({ dashboards }: { dashboards: DashboardLink[] }) {
       return a.name.localeCompare(b.name);
     });
   }, [dashboards]);
+
+  const sortedResolution = React.useMemo(() => {
+    return [...resolutionDashboards].sort((a, b) => {
+      if (a.favorite !== b.favorite) return a.favorite ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [resolutionDashboards]);
 
   return (
     <aside className="hidden md:flex w-64 shrink-0 flex-col border-r bg-card/40">
@@ -74,6 +88,49 @@ export function Sidebar({ dashboards }: { dashboards: DashboardLink[] }) {
                     <Star className="h-4 w-4 fill-current text-amber-400" />
                   ) : (
                     <LayoutDashboard className="h-4 w-4 opacity-60" />
+                  )
+                }
+                label={d.name}
+              />
+            ))}
+          </ul>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between px-2 pb-2">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              해결 시간
+            </span>
+            <Link
+              href="/resolution-time/new"
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="새 해결 시간 대시보드"
+            >
+              <PlusCircle className="h-4 w-4" />
+            </Link>
+          </div>
+          <ul className="space-y-0.5">
+            <SidebarLink
+              href="/resolution-time"
+              active={pathname === "/resolution-time"}
+              icon={<Timer className="h-4 w-4" />}
+              label="모든 대시보드"
+            />
+            {sortedResolution.length === 0 && (
+              <li className="px-2 py-2 text-xs text-muted-foreground">
+                아직 대시보드가 없습니다.
+              </li>
+            )}
+            {sortedResolution.map((d) => (
+              <SidebarLink
+                key={d.id}
+                href={`/resolution-time/${d.id}`}
+                active={pathname === `/resolution-time/${d.id}`}
+                icon={
+                  d.favorite ? (
+                    <Star className="h-4 w-4 fill-current text-amber-400" />
+                  ) : (
+                    <Timer className="h-4 w-4 opacity-60" />
                   )
                 }
                 label={d.name}

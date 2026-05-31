@@ -1,0 +1,1 @@
+ALTER TABLE `resolution_dashboard_sources` ADD `milestones` text DEFAULT '[]' NOT NULL;

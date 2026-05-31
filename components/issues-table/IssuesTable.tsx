@@ -6,9 +6,11 @@ import {
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
+  getPaginationRowModel,
   getSortedRowModel,
   useReactTable,
   type ColumnDef,
+  type PaginationState,
   type SortingState,
   type VisibilityState,
 } from "@tanstack/react-table";
@@ -32,6 +34,10 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   ArrowUpDown,
   CalendarRange,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Columns3,
   Copy,
   Download,
@@ -44,6 +50,13 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   DropdownMenu,
@@ -77,6 +90,8 @@ type Props = {
   initialColumnOrder: ColumnKey[];
 };
 
+const PAGE_SIZES = [10, 30, 60];
+
 export function IssuesTable({
   dashboardId,
   dashboardName,
@@ -90,6 +105,29 @@ export function IssuesTable({
     { id: "updated", desc: true },
   ]);
   const [statusFilter, setStatusFilter] = React.useState<Set<string>>(new Set());
+
+  const [pagination, setPagination] = React.useState<PaginationState>(() => {
+    if (typeof window === "undefined") return { pageIndex: 0, pageSize: 30 };
+    try {
+      const raw = window.localStorage.getItem(
+        `issues-table-page-size:${dashboardId}`,
+      );
+      const parsed = raw ? Number(raw) : NaN;
+      const allowed = PAGE_SIZES.includes(parsed) ? parsed : 30;
+      return { pageIndex: 0, pageSize: allowed };
+    } catch {
+      return { pageIndex: 0, pageSize: 30 };
+    }
+  });
+
+  React.useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        `issues-table-page-size:${dashboardId}`,
+        String(pagination.pageSize),
+      );
+    } catch {}
+  }, [dashboardId, pagination.pageSize]);
 
   const [visibility, setVisibility] = React.useState<VisibilityState>(() => {
     const map: VisibilityState = {};
@@ -355,17 +393,25 @@ export function IssuesTable({
   const table = useReactTable({
     data: filtered,
     columns,
-    state: { sorting, columnVisibility: visibility, columnOrder },
+    state: { sorting, columnVisibility: visibility, columnOrder, pagination },
     onSortingChange: setSorting,
     onColumnVisibilityChange: setVisibility,
     onColumnOrderChange: (updater) =>
       setColumnOrder((prev) =>
         typeof updater === "function" ? (updater(prev) as ColumnKey[]) : (updater as ColumnKey[]),
       ),
+    onPaginationChange: setPagination,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
   });
+
+  // Reset to first page when filters/search/data change so the user isn't
+  // stranded on a no-longer-existent page.
+  React.useEffect(() => {
+    setPagination((p) => (p.pageIndex === 0 ? p : { ...p, pageIndex: 0 }));
+  }, [search, statusFilter, filtered.length]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -563,6 +609,120 @@ export function IssuesTable({
             </Table>
           </DndContext>
         )}
+      </div>
+
+      {!query.isLoading && !query.isError && filtered.length > 0 && (
+        <PaginationBar
+          pageIndex={pagination.pageIndex}
+          pageSize={pagination.pageSize}
+          totalRows={filtered.length}
+          pageCount={Math.max(1, table.getPageCount())}
+          canPrev={table.getCanPreviousPage()}
+          canNext={table.getCanNextPage()}
+          onFirst={() => table.setPageIndex(0)}
+          onPrev={() => table.previousPage()}
+          onNext={() => table.nextPage()}
+          onLast={() => table.setPageIndex(Math.max(0, table.getPageCount() - 1))}
+          onPageSizeChange={(size) =>
+            setPagination({ pageIndex: 0, pageSize: size })
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+function PaginationBar({
+  pageIndex,
+  pageSize,
+  totalRows,
+  pageCount,
+  canPrev,
+  canNext,
+  onFirst,
+  onPrev,
+  onNext,
+  onLast,
+  onPageSizeChange,
+}: {
+  pageIndex: number;
+  pageSize: number;
+  totalRows: number;
+  pageCount: number;
+  canPrev: boolean;
+  canNext: boolean;
+  onFirst: () => void;
+  onPrev: () => void;
+  onNext: () => void;
+  onLast: () => void;
+  onPageSizeChange: (size: number) => void;
+}) {
+  const start = totalRows === 0 ? 0 : pageIndex * pageSize + 1;
+  const end = Math.min(totalRows, (pageIndex + 1) * pageSize);
+  return (
+    <div className="flex flex-wrap items-center gap-3 border-t px-6 py-2 text-xs">
+      <div className="text-muted-foreground">
+        {start}–{end} / {totalRows}
+      </div>
+      <div className="flex items-center gap-1">
+        <span className="text-muted-foreground">페이지당</span>
+        <Select
+          value={String(pageSize)}
+          onValueChange={(v) => onPageSizeChange(Number(v))}
+        >
+          <SelectTrigger className="h-7 w-[80px] text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PAGE_SIZES.map((s) => (
+              <SelectItem key={s} value={String(s)}>
+                {s}개
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex-1" />
+      <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="첫 페이지"
+          onClick={onFirst}
+          disabled={!canPrev}
+        >
+          <ChevronsLeft className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="이전 페이지"
+          onClick={onPrev}
+          disabled={!canPrev}
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        <span className="px-2 tabular-nums">
+          {pageIndex + 1} / {pageCount}
+        </span>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="다음 페이지"
+          onClick={onNext}
+          disabled={!canNext}
+        >
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="마지막 페이지"
+          onClick={onLast}
+          disabled={!canNext}
+        >
+          <ChevronsRight className="h-4 w-4" />
+        </Button>
       </div>
     </div>
   );

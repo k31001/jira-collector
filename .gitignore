@@ -41,5 +41,7 @@ yarn-error.log*
 next-env.d.ts
 data/*.db
 data/*.db-journal
+data/*.db-shm
+data/*.db-wal
 .env
 .env.local

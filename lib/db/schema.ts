@@ -102,6 +102,40 @@ export const statusColors = sqliteTable("status_colors", {
   color: text("color").notNull(),
 });
 
+export const resolutionDashboards = sqliteTable("resolution_dashboards", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  windowDays: integer("window_days").notNull().default(90),
+  timeBucket: text("time_bucket").notNull().default("week"), // 'day' | 'week' | 'month'
+  histogramBucketHours: integer("histogram_bucket_hours").notNull().default(24),
+  refreshIntervalSec: integer("refresh_interval_sec").notNull().default(600),
+  favorite: integer("favorite", { mode: "boolean" }).notNull().default(false),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at").notNull().default(sql`(unixepoch())`),
+});
+
+export const resolutionDashboardSources = sqliteTable(
+  "resolution_dashboard_sources",
+  {
+    id: text("id").primaryKey(),
+    dashboardId: text("dashboard_id")
+      .notNull()
+      .references(() => resolutionDashboards.id, { onDelete: "cascade" }),
+    serverId: text("server_id")
+      .notNull()
+      .references(() => jiraServers.id, { onDelete: "cascade" }),
+    label: text("label").notNull(),
+    jql: text("jql").notNull(),
+    color: text("color").notNull().default("#3B82F6"),
+    displayOrder: integer("display_order").notNull().default(0),
+    milestones: text("milestones").notNull().default("[]"),
+  },
+  (t) => ({
+    byDashboard: index("resolution_dashboard_sources_dashboard_idx").on(t.dashboardId),
+  }),
+);
+
 export type JiraServer = typeof jiraServers.$inferSelect;
 export type NewJiraServer = typeof jiraServers.$inferInsert;
 export type Dashboard = typeof dashboards.$inferSelect;
@@ -112,3 +146,8 @@ export type IssueNote = typeof issueNotes.$inferSelect;
 export type CustomStatus = typeof customStatuses.$inferSelect;
 export type CustomStatusMapping = typeof customStatusMappings.$inferSelect;
 export type StatusColor = typeof statusColors.$inferSelect;
+export type ResolutionDashboard = typeof resolutionDashboards.$inferSelect;
+export type NewResolutionDashboard = typeof resolutionDashboards.$inferInsert;
+export type ResolutionDashboardSource = typeof resolutionDashboardSources.$inferSelect;
+export type NewResolutionDashboardSource =
+  typeof resolutionDashboardSources.$inferInsert;
