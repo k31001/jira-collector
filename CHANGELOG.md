@@ -10,6 +10,20 @@
 
 ---
 
+## [1.6.1] — 2026-05-31
+
+### Changed
+- `docs/dashboard-guide.md` 보강 — v1.2~v1.6에서 추가된 기능들을 모두 반영:
+  - 새 섹션 6 "해결 시간 대시보드" — 개념, 생성, 뷰 6개 영역(컨트롤/요약카드/스마트필터/시계열/히스토그램/슬로우분석), 마일스톤, 4가지 사용 시나리오
+  - 4번 이슈 테이블에 페이지네이션 항목 (10/30/60) 추가
+  - 0번 첫 사용자 흐름에 두 종류 대시보드(이슈/해결시간) 안내
+  - FAQ에 해결 시간 대시보드 관련 6개 Q&A 추가
+- 인앱 매뉴얼에서도 갱신된 내용이 그대로 노출됨.
+
+[1.6.1]: https://github.com/k31001/jira-collector/releases/tag/v1.6.1
+
+---
+
 ## [1.6.0] — 2026-05-31
 
 ### Added
@@ -178,5 +192,5 @@
   - `tests/adf.test.ts` — ADF → text 변환
   - `tests/normalize.test.ts` — Done 카테고리 fallback
 
-[Unreleased]: https://github.com/k31001/jira-collector/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/k31001/jira-collector/compare/v1.6.1...HEAD
 [1.0.0]: https://github.com/k31001/jira-collector/releases/tag/v1.0.0
