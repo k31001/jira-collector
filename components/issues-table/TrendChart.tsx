@@ -5,6 +5,7 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  Line,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -26,7 +27,7 @@ type DataPoint = {
   label: string;
   created: number; // cumulative
   resolved: number; // cumulative
-  open: number; // created - resolved at that point
+  unresolved: number; // created - resolved at that point (snapshot)
 };
 
 /**
@@ -48,7 +49,7 @@ function buildSeries(issues: NormalizedIssue[], days: number): DataPoint[] {
     const key = d.toISOString().slice(0, 10);
     const label = `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     keyToIdx.set(key, out.length);
-    out.push({ date: key, label, created: 0, resolved: 0, open: 0 });
+    out.push({ date: key, label, created: 0, resolved: 0, unresolved: 0 });
   }
 
   function bucketIndex(iso: string | undefined): number | null {
@@ -76,7 +77,7 @@ function buildSeries(issues: NormalizedIssue[], days: number): DataPoint[] {
     rCum += point.resolved;
     point.created = cCum;
     point.resolved = rCum;
-    point.open = cCum - rCum;
+    point.unresolved = cCum - rCum;
   }
   return out;
 }
@@ -146,7 +147,7 @@ export function TrendChart({
   const last = data[data.length - 1];
   const totalCreated = last?.created ?? 0;
   const totalResolved = last?.resolved ?? 0;
-  const openNow = last?.open ?? 0;
+  const unresolvedNow = last?.unresolved ?? 0;
 
   const heightPx = Math.round(BASE_HEIGHT_PX * size);
 
@@ -168,12 +169,12 @@ export function TrendChart({
           <span
             className={
               "font-semibold " +
-              (openNow > 0
+              (unresolvedNow > 0
                 ? "text-amber-600 dark:text-amber-400"
                 : "text-emerald-600 dark:text-emerald-400")
             }
           >
-            {openNow}
+            {unresolvedNow}
           </span>
         </span>
         <div className="flex-1" />
@@ -271,6 +272,14 @@ export function TrendChart({
                           : "미해결";
                     return [value as number, label];
                   }}
+                  itemSorter={(item) => {
+                    const order: Record<string, number> = {
+                      created: 0,
+                      resolved: 1,
+                      unresolved: 2,
+                    };
+                    return order[item.dataKey as string] ?? 99;
+                  }}
                 />
                 <Area
                   type="monotone"
@@ -288,6 +297,15 @@ export function TrendChart({
                   fill="url(#grad-resolved)"
                   isAnimationActive={false}
                 />
+                <Line
+                  type="monotone"
+                  dataKey="unresolved"
+                  stroke="#F59E0B"
+                  strokeWidth={1.75}
+                  strokeDasharray="4 3"
+                  dot={false}
+                  isAnimationActive={false}
+                />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -300,8 +318,15 @@ export function TrendChart({
               <span className="inline-block h-2 w-3 rounded-sm" style={{ background: "#10B981" }} />
               누적 해결
             </span>
-            <span className="text-muted-foreground">
-              두 영역 사이 간격 = 미해결 이슈
+            <span className="flex items-center gap-1.5">
+              <span
+                className="inline-block h-[2px] w-3"
+                style={{
+                  background:
+                    "repeating-linear-gradient(to right, #F59E0B 0, #F59E0B 4px, transparent 4px, transparent 7px)",
+                }}
+              />
+              미해결 (스냅샷)
             </span>
           </div>
         </div>

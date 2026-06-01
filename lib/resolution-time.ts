@@ -275,6 +275,68 @@ export function buildTimeSeries(
   return buckets;
 }
 
+export type UnresolvedTimeSeriesPoint = {
+  /** ISO date for the bucket start (yyyy-mm-dd) */
+  date: string;
+  /** Display label */
+  label: string;
+  /** Count of issues unresolved as of the END of this bucket */
+  unresolved: number;
+};
+
+/**
+ * Build a snapshot count of unresolved issues at the end of each bucket. An
+ * issue counts as "unresolved at time T" when it was created on or before T
+ * AND either has no resolved timestamp or was resolved after T.
+ */
+export function buildUnresolvedTimeSeries(
+  issues: NormalizedIssue[],
+  windowDays: number,
+  bucket: TimeBucket,
+  now: Date = new Date(),
+): UnresolvedTimeSeriesPoint[] {
+  const end = bucketStart(now, bucket);
+  const startBoundary = new Date(end);
+  startBoundary.setDate(startBoundary.getDate() - windowDays + 1);
+  const start = bucketStart(startBoundary, bucket);
+
+  const buckets: { date: string; label: string; startMs: number }[] = [];
+  let cursor = new Date(start);
+  while (cursor <= end) {
+    buckets.push({
+      date: isoDate(cursor),
+      label: bucketLabel(cursor, bucket),
+      startMs: cursor.getTime(),
+    });
+    cursor = advance(cursor, bucket);
+  }
+
+  const parsed = issues
+    .map((i) => {
+      const c = i.created ? Date.parse(i.created) : NaN;
+      const r = i.resolved ? Date.parse(i.resolved) : NaN;
+      return {
+        created: Number.isFinite(c) ? c : null,
+        resolved: Number.isFinite(r) ? r : null,
+      };
+    })
+    .filter((p): p is { created: number; resolved: number | null } =>
+      p.created !== null,
+    );
+
+  return buckets.map((b, i) => {
+    const next = buckets[i + 1];
+    const bucketEndMs = next ? next.startMs : Number.POSITIVE_INFINITY;
+    let count = 0;
+    for (const p of parsed) {
+      if (p.created >= bucketEndMs) continue;
+      if (p.resolved !== null && p.resolved < bucketEndMs) continue;
+      count += 1;
+    }
+    return { date: b.date, label: b.label, unresolved: count };
+  });
+}
+
 /**
  * Map a calendar date to the matching bucket label in the given time series.
  * Returns null if the date falls outside the series window.

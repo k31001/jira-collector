@@ -3,60 +3,31 @@
 import * as React from "react";
 import {
   CartesianGrid,
+  Legend,
   Line,
   LineChart,
-  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
-  Legend,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  findBucketLabelForDate,
-  formatHours,
-  type TimeBucket,
-} from "@/lib/resolution-time";
-import type {
-  TimeSeriesPoint,
-  UnresolvedTimeSeriesPoint,
-} from "@/lib/resolution-time";
-
-export type MilestoneMark = {
-  /** ID of the source the milestone belongs to (used for color attribution). */
-  sourceId: string;
-  sourceLabel: string;
-  color: string;
-  name: string;
-  /** ISO date string YYYY-MM-DD */
-  date: string;
-};
-
-export type Series = {
-  sourceId: string;
-  label: string;
-  color: string;
-  points: TimeSeriesPoint[];
-  /** Per-bucket count of unresolved issues at bucket end. */
-  unresolved: UnresolvedTimeSeriesPoint[];
-};
+import type { TimeBucket } from "@/lib/resolution-time";
+import type { Series } from "./TimeSeriesChart";
 
 /**
- * Combined chart showing average resolution time across all series. Each
- * series shares the same X (bucket) axis. We zip them into a single dataset
- * keyed by `date` so recharts can render them as separate lines.
+ * Snapshot count of unresolved issues per bucket, per JQL source. Mirrors the
+ * TimeSeriesChart layout but plots `unresolved` counts instead of `avgHours`.
+ * Visibility is controlled externally via the same `visible` map so toggling a
+ * source applies to both charts.
  */
-export function TimeSeriesChart({
+export function UnresolvedTrendChart({
   series,
   bucket,
-  milestones = [],
   visible,
 }: {
   series: Series[];
   bucket: TimeBucket;
-  milestones?: MilestoneMark[];
-  /** sourceId → visible (undefined = visible). */
   visible: Record<string, boolean>;
 }) {
   const isVisible = React.useCallback(
@@ -68,20 +39,20 @@ export function TimeSeriesChart({
     if (series.length === 0) return [];
     const allDates = new Set<string>();
     for (const s of series) {
-      for (const p of s.points) allDates.add(p.date);
+      for (const p of s.unresolved) allDates.add(p.date);
     }
     const sortedDates = [...allDates].sort();
     return sortedDates.map((date) => {
       const labelOf = series
-        .map((s) => s.points.find((p) => p.date === date)?.label)
+        .map((s) => s.unresolved.find((p) => p.date === date)?.label)
         .find((x) => x);
       const row: Record<string, string | number | null> = {
         date,
         label: labelOf ?? date,
       };
       for (const s of series) {
-        const pt = s.points.find((p) => p.date === date);
-        row[s.sourceId] = pt?.avgHours ?? null;
+        const pt = s.unresolved.find((p) => p.date === date);
+        row[s.sourceId] = pt?.unresolved ?? null;
       }
       return row;
     });
@@ -96,46 +67,19 @@ export function TimeSeriesChart({
           ? "월별"
           : "분기별";
 
-  // Map each milestone to its X-axis category and assign a `stackIdx` within
-  // its bucket so multiple milestones at the same X (e.g., two JQLs marking
-  // the same release date with the same name) can be staggered visually
-  // instead of overlapping into a single visible line/label.
-  const milestoneMarks = React.useMemo(() => {
-    const allPoints = data.map((d) => ({
-      date: d.date as string,
-      label: d.label as string,
-    }));
-    const placed = milestones
-      .map((m) => {
-        const date = new Date(m.date);
-        if (Number.isNaN(date.getTime())) return null;
-        const x = findBucketLabelForDate(date, allPoints);
-        if (x === null) return null;
-        return { ...m, x };
-      })
-      .filter((x): x is MilestoneMark & { x: string } => x !== null);
-
-    const bucketCounts = new Map<string, number>();
-    return placed.map((m) => {
-      const idx = bucketCounts.get(m.x) ?? 0;
-      bucketCounts.set(m.x, idx + 1);
-      return { ...m, stackIdx: idx };
-    });
-  }, [data, milestones]);
-
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm">
-          평균 해결 시간 추이 ({bucketLabel})
+          미해결 이슈 추이 ({bucketLabel})
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-[280px] w-full">
+        <div className="h-[220px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
               data={data}
-              margin={{ top: 44, right: 16, left: -10, bottom: 0 }}
+              margin={{ top: 36, right: 16, left: -10, bottom: 0 }}
             >
               <CartesianGrid
                 strokeDasharray="3 3"
@@ -155,9 +99,7 @@ export function TimeSeriesChart({
                 axisLine={false}
                 tickLine={false}
                 width={40}
-                tickFormatter={(v) =>
-                  typeof v === "number" ? formatHours(v) : ""
-                }
+                allowDecimals={false}
               />
               <Tooltip
                 contentStyle={{
@@ -174,7 +116,7 @@ export function TimeSeriesChart({
                   const s = series.find((x) => x.sourceId === name);
                   const label = s?.label ?? String(name);
                   if (typeof value !== "number") return ["—", label];
-                  return [formatHours(value), label];
+                  return [`${value}개`, label];
                 }}
               />
               <Legend
@@ -186,24 +128,6 @@ export function TimeSeriesChart({
                   return s?.label ?? String(value);
                 }}
               />
-              {milestoneMarks.map((m) => (
-                <ReferenceLine
-                  key={`milestone-${m.x}-${m.sourceId}-${m.name}-${m.stackIdx}`}
-                  x={m.x}
-                  stroke={m.color}
-                  strokeDasharray="4 3"
-                  strokeOpacity={0.85}
-                  strokeDashoffset={m.stackIdx * 4}
-                  ifOverflow="hidden"
-                  label={{
-                    value: m.name,
-                    position: "top",
-                    fill: m.color,
-                    fontSize: 10,
-                    offset: 4 + m.stackIdx * 13,
-                  }}
-                />
-              ))}
               {series.map((s) => (
                 <Line
                   key={s.sourceId}
@@ -224,7 +148,7 @@ export function TimeSeriesChart({
         </div>
         {data.length === 0 && (
           <div className="py-8 text-center text-xs text-muted-foreground">
-            기간 내 해결된 이슈가 없습니다.
+            표시할 데이터가 없습니다.
           </div>
         )}
       </CardContent>

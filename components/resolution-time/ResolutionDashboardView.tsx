@@ -21,6 +21,7 @@ import {
   buildFacets,
   buildHistogram,
   buildTimeSeries,
+  buildUnresolvedTimeSeries,
   statsForSource,
   withResolutionHours,
   type FacetSelection,
@@ -39,6 +40,7 @@ import {
   type MilestoneMark,
   type Series,
 } from "./TimeSeriesChart";
+import { UnresolvedTrendChart } from "./UnresolvedTrendChart";
 import {
   HistogramChart,
   type SourceHistogram,
@@ -66,6 +68,23 @@ const WINDOW_OPTIONS = [
 ];
 
 const FILTERS_STORAGE_KEY = (id: string) => `resolution-time-filters:${id}`;
+const VISIBLE_JQLS_KEY = (id: string) =>
+  `resolution-time:visible-jqls:${id}`;
+
+function loadVisibleJqls(id: string): Record<string, boolean> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(VISIBLE_JQLS_KEY(id));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") {
+      return parsed as Record<string, boolean>;
+    }
+    return {};
+  } catch {
+    return {};
+  }
+}
 
 function loadFilters(id: string): Record<string, FacetSelection> {
   if (typeof window === "undefined") return {};
@@ -97,6 +116,27 @@ export function ResolutionDashboardView({
   const [filters, setFilters] = React.useState<Record<string, FacetSelection>>(
     () => loadFilters(dashboardId),
   );
+
+  const [visibleJqls, setVisibleJqls] = React.useState<Record<string, boolean>>(
+    () => loadVisibleJqls(dashboardId),
+  );
+
+  React.useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        VISIBLE_JQLS_KEY(dashboardId),
+        JSON.stringify(visibleJqls),
+      );
+    } catch {}
+  }, [dashboardId, visibleJqls]);
+
+  const toggleJqlVisibility = React.useCallback((sourceId: string) => {
+    setVisibleJqls((prev) => {
+      const next = { ...prev };
+      next[sourceId] = prev[sourceId] === false ? true : false;
+      return next;
+    });
+  }, []);
 
   const [selection, setSelection] = React.useState<IssueListSelection | null>(
     null,
@@ -188,6 +228,11 @@ export function ResolutionDashboardView({
         label: ps.source.label,
         color: ps.source.color,
         points: buildTimeSeries(ps.resolved, windowDays, timeBucket),
+        unresolved: buildUnresolvedTimeSeries(
+          ps.filteredIssues,
+          windowDays,
+          timeBucket,
+        ),
       })),
     [perSource, windowDays, timeBucket],
   );
@@ -267,7 +312,11 @@ export function ResolutionDashboardView({
         </Card>
       ) : (
         <>
-          <SummaryCards items={summary} />
+          <SummaryCards
+            items={summary}
+            visible={visibleJqls}
+            onToggle={toggleJqlVisibility}
+          />
 
           {perSource.some((p) => p.source.error) && (
             <Card className="border-destructive/50">
@@ -300,6 +349,12 @@ export function ResolutionDashboardView({
             series={series}
             bucket={timeBucket}
             milestones={milestoneMarks}
+            visible={visibleJqls}
+          />
+          <UnresolvedTrendChart
+            series={series}
+            bucket={timeBucket}
+            visible={visibleJqls}
           />
           <HistogramChart
             histograms={histograms}

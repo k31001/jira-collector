@@ -10,6 +10,20 @@
 
 ---
 
+## [1.7.0] — 2026-06-01
+
+### Added
+- **TrendChart에 미해결(unresolved) 추이 라인** — 메인 이슈 대시보드의 누적 트렌드 차트에 created/resolved 외에 미해결 스냅샷 추이를 주황 점선으로 추가. legend에도 항목 추가.
+- **Resolution Time 미해결 이슈 추이 차트** — 평균 해결 시간 차트 아래에 별도 카드로 JQL별 미해결 이슈 수 시계열 추가 (`lib/resolution-time.ts`에 `buildUnresolvedTimeSeries` 추가, `components/resolution-time/UnresolvedTrendChart.tsx` 신설). 같은 JQL 색·라인 스타일로 일관.
+- **JQL 토글 (SummaryCards 클릭)** — Resolution Time 대시보드 상단 JQL 요약 카드(평균/중앙값/P90/해결·전체)를 클릭하면 해당 JQL 시리즈가 평균 해결 시간 차트와 미해결 이슈 추이 차트 양쪽에서 숨김/표시 토글. 숨김 카드는 dim + 라벨 strikethrough + EyeOff 아이콘. 상태는 `localStorage`(`resolution-time:visible-jqls:{id}`)에 저장. 키보드 접근(Enter/Space)과 `aria-pressed` 지원.
+
+### Changed
+- **LongTailTable(오래 걸린 이슈 분석)에 10개 단위 페이지네이션** — 임계값 초과 이슈를 10개씩 분할 표시 (이전/다음 버튼 + `X/N 페이지` 카운터 + `총 N개 중 X–Y개 표시`). 임계값/소스/정렬 변경 시 페이지 자동 리셋. 현재 페이지만 렌더링하여 다수 이슈에서 체감 성능 개선.
+
+[1.7.0]: https://github.com/k31001/jira-collector/releases/tag/v1.7.0
+
+---
+
 ## [1.6.2] — 2026-05-31
 
 ### Changed

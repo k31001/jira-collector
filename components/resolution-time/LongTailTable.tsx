@@ -1,7 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUpDown, Copy, ExternalLink, Filter } from "lucide-react";
+import {
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  ExternalLink,
+  Filter,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   Card,
@@ -46,6 +53,8 @@ const PRESETS = [
   { label: "90일", days: 90 },
 ];
 
+const PAGE_SIZE = 10;
+
 const PRIORITY_RANK: Record<string, number> = {
   Highest: 5,
   High: 4,
@@ -76,8 +85,22 @@ export function LongTailTable({
       return 14;
     }
   });
-  const [sourceFilter, setSourceFilter] = React.useState<string>("all");
-  const [sortKey, setSortKey] = React.useState<SortKey>("slowFactor");
+  const [sourceFilter, setSourceFilterRaw] = React.useState<string>("all");
+  const [sortKey, setSortKeyRaw] = React.useState<SortKey>("slowFactor");
+  const [page, setPage] = React.useState(0);
+
+  const updateThresholdDays = React.useCallback((v: number) => {
+    setThresholdDays(v);
+    setPage(0);
+  }, []);
+  const setSourceFilter = React.useCallback((v: string) => {
+    setSourceFilterRaw(v);
+    setPage(0);
+  }, []);
+  const setSortKey = React.useCallback((v: SortKey) => {
+    setSortKeyRaw(v);
+    setPage(0);
+  }, []);
 
   React.useEffect(() => {
     try {
@@ -129,6 +152,16 @@ export function LongTailTable({
     filteredBySource.length === 0
       ? 0
       : slowIssues.length / filteredBySource.length;
+
+  const totalPages = Math.max(1, Math.ceil(slowIssues.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+
+  const pageStart = safePage * PAGE_SIZE;
+  const pageEnd = Math.min(pageStart + PAGE_SIZE, slowIssues.length);
+  const pagedIssues = React.useMemo(
+    () => slowIssues.slice(pageStart, pageEnd),
+    [slowIssues, pageStart, pageEnd],
+  );
 
   function copyMarkdown() {
     if (slowIssues.length === 0) {
@@ -217,7 +250,7 @@ export function LongTailTable({
               max={365}
               value={thresholdDays}
               onChange={(e) =>
-                setThresholdDays(Math.max(1, Number(e.target.value)))
+                updateThresholdDays(Math.max(1, Number(e.target.value)))
               }
               className="h-7 w-[80px] text-xs"
             />
@@ -230,7 +263,7 @@ export function LongTailTable({
                 size="sm"
                 variant={thresholdDays === p.days ? "default" : "outline"}
                 className="h-7 px-2 text-xs"
-                onClick={() => setThresholdDays(p.days)}
+                onClick={() => updateThresholdDays(p.days)}
               >
                 {p.label}
               </Button>
@@ -314,7 +347,7 @@ export function LongTailTable({
                   </tr>
                 </thead>
                 <tbody>
-                  {slowIssues.map((i) => {
+                  {pagedIssues.map((i) => {
                     const factor = slowFactor(
                       i.resolutionHours,
                       populationMedian,
@@ -427,6 +460,42 @@ export function LongTailTable({
                   })}
                 </tbody>
               </table>
+            </div>
+            <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+              <div>
+                총 {slowIssues.length}개 중 {pageStart + 1}–{pageEnd}개 표시
+              </div>
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => setPage(Math.max(0, safePage - 1))}
+                  disabled={safePage === 0}
+                  aria-label="이전 페이지"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  이전
+                </Button>
+                <span className="px-2 tabular-nums">
+                  {safePage + 1} / {totalPages}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() =>
+                    setPage(Math.min(totalPages - 1, safePage + 1))
+                  }
+                  disabled={safePage >= totalPages - 1}
+                  aria-label="다음 페이지"
+                >
+                  다음
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </div>
           </>
         )}

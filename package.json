@@ -1,6 +1,6 @@
 {
   "name": "jira-collector",
-  "version": "1.6.2",
+  "version": "1.7.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -14,6 +14,7 @@
     "setup": "npm run bootstrap && npm run db:generate && npm run db:migrate",
     "mock-jira": "tsx scripts/mock-jira.ts",
     "seed-jira-issues": "tsx scripts/seed-jira-issues.ts",
+    "seed-resolution-issues": "tsx scripts/seed-resolution-issues.ts",
     "test": "node --conditions=react-server --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
