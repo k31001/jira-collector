@@ -31,6 +31,7 @@ import {
   buildTimeSeries,
   buildUnresolvedTimeSeries,
   statsForSource,
+  withAging,
   withResolutionHours,
   type CustomFacetForFilter,
   type CustomFacetSelection,
@@ -62,6 +63,7 @@ import {
   type IssueListSelection,
 } from "./IssueListDialog";
 import { LongTailTable } from "./LongTailTable";
+import { AgingWipTable } from "./AgingWipTable";
 
 type Props = {
   dashboardId: string;
@@ -290,10 +292,12 @@ export function ResolutionDashboardView({
         customFilters[s.sourceId] ?? {},
       );
       const resolved = withResolutionHours(filtered);
+      const aging = withAging(filtered);
       return {
         source: s,
         filteredIssues: filtered,
         resolved,
+        aging,
       };
     });
   }, [sources, filters, customFilters, compiledCustomFacets]);
@@ -466,6 +470,15 @@ export function ResolutionDashboardView({
           <HistogramChart
             histograms={histograms}
             onBinSelected={onBinSelected}
+          />
+          <AgingWipTable
+            dashboardId={dashboardId}
+            perSource={visiblePerSource.map((ps) => ({
+              sourceId: ps.source.sourceId,
+              sourceLabel: ps.source.label,
+              sourceColor: ps.source.color,
+              aging: ps.aging,
+            }))}
           />
           <LongTailTable
             dashboardId={dashboardId}

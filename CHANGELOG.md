@@ -10,6 +10,14 @@
 
 ---
 
+## [1.11.0] — 2026-06-01
+
+### Added
+- **노화 중인 미해결 이슈 (Aging WIP) 분석** — Resolution Time 대시보드에 새 카드 추가. 기존 "오래 걸린 이슈 분석"은 *이미 해결된* 이슈를 보지만, Aging WIP는 *아직 안 풀린* 이슈 중 오래된 것을 짚어 줍니다(보통 더 actionable한 신호). 각 이슈의 **나이**(생성 후 경과)와 **미접촉**(마지막 업데이트 후 경과)을 표시하고, 미접촉이 전체 나이의 절반을 넘으면 경고색으로 강조. 임계값(기본 14일)·소스·정렬(나이/미접촉/우선순위/생성일) 컨트롤, 10개 페이지네이션, 담당자/상태/타입/우선순위/라벨 차원별 분포, Markdown 복사 지원. JQL 카드 토글(visibility)도 반영. 데이터 추가 fetch 없음 — 기존 created/updated만 사용.
+- `lib/resolution-time.ts`에 `withAging`, `flattenAgingWithSource` + 타입 `AgingIssue`, `LabeledAgingIssue` 추가 (단위 테스트 3개).
+
+---
+
 ## [1.10.1] — 2026-06-01
 
 ### Changed
@@ -95,6 +103,7 @@
 ### Changed
 - **LongTailTable(오래 걸린 이슈 분석)에 10개 단위 페이지네이션** — 임계값 초과 이슈를 10개씩 분할 표시 (이전/다음 버튼 + `X/N 페이지` 카운터 + `총 N개 중 X–Y개 표시`). 임계값/소스/정렬 변경 시 페이지 자동 리셋. 현재 페이지만 렌더링하여 다수 이슈에서 체감 성능 개선.
 
+[1.11.0]: https://github.com/k31001/jira-collector/releases/tag/v1.11.0
 [1.10.1]: https://github.com/k31001/jira-collector/releases/tag/v1.10.1
 [1.10.0]: https://github.com/k31001/jira-collector/releases/tag/v1.10.0
 [1.9.1]: https://github.com/k31001/jira-collector/releases/tag/v1.9.1

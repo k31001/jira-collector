@@ -649,6 +649,78 @@ export function slowFactor(hours: number, medianHours: number): number {
   return hours / medianHours;
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Aging WIP (open issue) analysis                                            */
+/* -------------------------------------------------------------------------- */
+
+export type AgingIssue = NormalizedIssue & {
+  /** Hours since the issue was created (how long it has been open). */
+  ageHours: number;
+  /** Hours since the issue was last updated (idle / staleness signal). */
+  idleHours: number;
+};
+
+export type LabeledAgingIssue = AgingIssue & {
+  sourceId: string;
+  sourceLabel: string;
+  sourceColor: string;
+};
+
+/**
+ * Keep only unresolved ("work in progress") issues and attach age (since
+ * created) and idle (since last update) durations in hours. An issue counts
+ * as unresolved when it has no `resolved` timestamp — see normalizeIssue,
+ * which already folds done-category issues into `resolved`.
+ *
+ * Unlike resolution time (which measures finished work), aging WIP surfaces
+ * what is *currently* stuck, which is usually the more actionable signal.
+ */
+export function withAging(
+  issues: NormalizedIssue[],
+  now: number = Date.now(),
+): AgingIssue[] {
+  const out: AgingIssue[] = [];
+  for (const i of issues) {
+    if (i.resolved) continue; // resolved → not WIP
+    const created = i.created ? Date.parse(i.created) : NaN;
+    if (!Number.isFinite(created)) continue;
+    const updatedParsed = i.updated ? Date.parse(i.updated) : NaN;
+    const updated = Number.isFinite(updatedParsed) ? updatedParsed : created;
+    out.push({
+      ...i,
+      ageHours: Math.max(0, (now - created) / MS_PER_HOUR),
+      idleHours: Math.max(0, (now - updated) / MS_PER_HOUR),
+    });
+  }
+  return out;
+}
+
+/**
+ * Flatten per-source aging arrays into one list, tagging each issue with its
+ * source so the aging-WIP table can show source attribution.
+ */
+export function flattenAgingWithSource(
+  perSource: ReadonlyArray<{
+    sourceId: string;
+    sourceLabel: string;
+    sourceColor: string;
+    aging: AgingIssue[];
+  }>,
+): LabeledAgingIssue[] {
+  const out: LabeledAgingIssue[] = [];
+  for (const ps of perSource) {
+    for (const a of ps.aging) {
+      out.push({
+        ...a,
+        sourceId: ps.sourceId,
+        sourceLabel: ps.sourceLabel,
+        sourceColor: ps.sourceColor,
+      });
+    }
+  }
+  return out;
+}
+
 /** Pretty-print hours like `36h` or `2.5d`. */
 export function formatHours(h: number | null | undefined): string {
   if (h === null || h === undefined || !Number.isFinite(h)) return "—";

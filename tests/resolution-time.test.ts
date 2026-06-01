@@ -15,7 +15,9 @@ import {
   percentile,
   slowFactor,
   statsForSource,
+  withAging,
   withResolutionHours,
+  flattenAgingWithSource,
   type ResolvedIssue,
 } from "@/lib/resolution-time";
 import type { NormalizedIssue } from "@/lib/jira/types";
@@ -89,6 +91,76 @@ test("withResolutionHours filters out unresolved issues", () => {
   assert.equal(out.length, 1);
   assert.equal(out[0].key, "A");
   assert.equal(out[0].resolutionHours, 24);
+});
+
+/* ------------------------------ aging WIP -------------------------------- */
+
+test("withAging keeps only unresolved issues and computes age/idle", () => {
+  const now = Date.parse("2026-05-31T00:00:00Z");
+  const issues: NormalizedIssue[] = [
+    // unresolved, created 10 days ago, updated 2 days ago
+    makeIssue({
+      key: "OPEN",
+      rawStatus: "In Progress",
+      statusCategoryKey: "indeterminate",
+      effectiveStatus: { label: "In Progress", color: "#F59E0B" },
+      created: "2026-05-21T00:00:00Z",
+      updated: "2026-05-29T00:00:00Z",
+    }),
+    // resolved → excluded
+    makeIssue({
+      key: "DONE",
+      created: "2026-05-01T00:00:00Z",
+      resolved: "2026-05-02T00:00:00Z",
+    }),
+  ];
+  const out = withAging(issues, now);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].key, "OPEN");
+  assert.equal(out[0].ageHours, 240); // 10 days
+  assert.equal(out[0].idleHours, 48); // 2 days
+});
+
+test("withAging falls back to created when updated is missing", () => {
+  const now = Date.parse("2026-05-31T00:00:00Z");
+  const out = withAging(
+    [
+      makeIssue({
+        key: "X",
+        rawStatus: "To Do",
+        statusCategoryKey: "new",
+        effectiveStatus: { label: "To Do", color: "#888" },
+        created: "2026-05-30T00:00:00Z",
+        updated: undefined,
+      }),
+    ],
+    now,
+  );
+  assert.equal(out.length, 1);
+  assert.equal(out[0].ageHours, 24);
+  assert.equal(out[0].idleHours, 24);
+});
+
+test("flattenAgingWithSource tags each issue with its source", () => {
+  const now = Date.parse("2026-05-31T00:00:00Z");
+  const aging = withAging(
+    [
+      makeIssue({
+        key: "A",
+        statusCategoryKey: "new",
+        effectiveStatus: { label: "To Do", color: "#888" },
+        created: "2026-05-20T00:00:00Z",
+        updated: "2026-05-20T00:00:00Z",
+      }),
+    ],
+    now,
+  );
+  const flat = flattenAgingWithSource([
+    { sourceId: "s1", sourceLabel: "JQL 1", sourceColor: "#3B82F6", aging },
+  ]);
+  assert.equal(flat.length, 1);
+  assert.equal(flat[0].sourceLabel, "JQL 1");
+  assert.equal(flat[0].key, "A");
 });
 
 /* ----------------------------- histogram --------------------------------- */
