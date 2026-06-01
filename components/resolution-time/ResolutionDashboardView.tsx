@@ -3,7 +3,14 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AlertCircle, Loader2, RefreshCw } from "lucide-react";
+import {
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  Filter,
+  Loader2,
+  RefreshCw,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -89,6 +96,18 @@ function loadCustomFilters(id: string): Record<string, CustomFacetSelection> {
     return {};
   }
 }
+const FILTERS_EXPANDED_KEY = (id: string) =>
+  `resolution-time:filters-expanded:${id}`;
+
+function loadFiltersExpanded(id: string): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(FILTERS_EXPANDED_KEY(id)) === "1";
+  } catch {
+    return false;
+  }
+}
+
 const VISIBLE_JQLS_KEY = (id: string) =>
   `resolution-time:visible-jqls:${id}`;
 
@@ -166,6 +185,18 @@ export function ResolutionDashboardView({
       );
     } catch {}
   }, [dashboardId, customFilters]);
+
+  const [filtersExpanded, setFiltersExpanded] = React.useState<boolean>(() =>
+    loadFiltersExpanded(dashboardId),
+  );
+  React.useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        FILTERS_EXPANDED_KEY(dashboardId),
+        filtersExpanded ? "1" : "0",
+      );
+    } catch {}
+  }, [dashboardId, filtersExpanded]);
 
   const [visibleJqls, setVisibleJqls] = React.useState<Record<string, boolean>>(
     () => loadVisibleJqls(dashboardId),
@@ -406,6 +437,8 @@ export function ResolutionDashboardView({
               customFacets={compiledCustomFacets}
               onFilterChange={patchFilter}
               onCustomFilterChange={patchCustomFilter}
+              expanded={filtersExpanded}
+              onExpandedChange={setFiltersExpanded}
             />
           )}
 
@@ -535,6 +568,8 @@ function PerSourceFilters({
   customFacets,
   onFilterChange,
   onCustomFilterChange,
+  expanded,
+  onExpandedChange,
 }: {
   sources: ResolutionSourceResult[];
   filters: Record<string, FacetSelection>;
@@ -542,43 +577,86 @@ function PerSourceFilters({
   customFacets: CustomFacetForFilter[];
   onFilterChange: (sourceId: string, next: FacetSelection) => void;
   onCustomFilterChange: (sourceId: string, next: CustomFacetSelection) => void;
+  expanded: boolean;
+  onExpandedChange: (v: boolean) => void;
 }) {
+  // Total active filter selections across every source — surfaces in the
+  // collapsed header so the user knows "something is filtering" without
+  // having to expand.
+  const activeCount = React.useMemo(() => {
+    let n = 0;
+    for (const sel of Object.values(filters)) {
+      for (const v of Object.values(sel)) n += v?.length ?? 0;
+    }
+    for (const sel of Object.values(customFilters)) {
+      for (const v of Object.values(sel)) n += v?.length ?? 0;
+    }
+    return n;
+  }, [filters, customFilters]);
+
   return (
     <Card>
-      <CardContent className="space-y-2 p-3">
-        {sources.map((s) => {
-          if (s.issues.length === 0) return null;
-          const facets = buildFacets(s.issues);
-          const value = filters[s.sourceId] ?? {};
-          const customValue = customFilters[s.sourceId] ?? {};
-          return (
-            <div
-              key={s.sourceId}
-              className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b py-1.5 last:border-b-0 last:pb-0"
-            >
-              <span className="inline-flex items-center gap-1.5 text-xs">
-                <span
-                  className="inline-block h-2.5 w-2.5 rounded-sm"
-                  style={{ background: s.color }}
-                />
-                <span className="font-medium">{s.label}</span>
-                <span className="text-muted-foreground">
-                  ({s.issues.length}개)
-                </span>
-              </span>
-              <SmartFilters
-                facets={facets}
-                value={value}
-                onChange={(next) => onFilterChange(s.sourceId, next)}
-                customFacets={customFacets}
-                customValue={customValue}
-                onCustomChange={(next) =>
-                  onCustomFilterChange(s.sourceId, next)
-                }
-              />
-            </div>
-          );
-        })}
+      <CardContent className="p-0">
+        <button
+          type="button"
+          onClick={() => onExpandedChange(!expanded)}
+          className="flex w-full items-center gap-2 px-3 py-2 text-xs hover:bg-accent/30"
+          aria-expanded={expanded}
+        >
+          {expanded ? (
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+          )}
+          <Filter className="h-3 w-3 text-muted-foreground" />
+          <span className="font-medium">스마트 필터</span>
+          {activeCount > 0 && (
+            <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground">
+              {activeCount}
+            </span>
+          )}
+          <span className="flex-1" />
+          <span className="text-muted-foreground">
+            {expanded ? "접기" : `${sources.length}개 JQL · 펼치기`}
+          </span>
+        </button>
+        {expanded && (
+          <div className="space-y-2 border-t p-3">
+            {sources.map((s) => {
+              if (s.issues.length === 0) return null;
+              const facets = buildFacets(s.issues);
+              const value = filters[s.sourceId] ?? {};
+              const customValue = customFilters[s.sourceId] ?? {};
+              return (
+                <div
+                  key={s.sourceId}
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b py-1.5 last:border-b-0 last:pb-0"
+                >
+                  <span className="inline-flex items-center gap-1.5 text-xs">
+                    <span
+                      className="inline-block h-2.5 w-2.5 rounded-sm"
+                      style={{ background: s.color }}
+                    />
+                    <span className="font-medium">{s.label}</span>
+                    <span className="text-muted-foreground">
+                      ({s.issues.length}개)
+                    </span>
+                  </span>
+                  <SmartFilters
+                    facets={facets}
+                    value={value}
+                    onChange={(next) => onFilterChange(s.sourceId, next)}
+                    customFacets={customFacets}
+                    customValue={customValue}
+                    onCustomChange={(next) =>
+                      onCustomFilterChange(s.sourceId, next)
+                    }
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
