@@ -55,6 +55,8 @@ export function ThroughputScatterChart({
             x: p.count,
             y: p.avgHours as number,
             bucketLabel: p.label,
+            sourceLabel: s.label,
+            color: s.color,
           })),
       })),
     [series],
@@ -131,22 +133,11 @@ export function ThroughputScatterChart({
               <ZAxis range={[50, 50]} />
               <Tooltip
                 cursor={{ strokeDasharray: "3 3" }}
-                contentStyle={{
-                  background: "var(--popover)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 6,
-                  fontSize: 12,
-                }}
-                labelStyle={{ color: "var(--muted-foreground)", fontSize: 11 }}
-                formatter={(value, name) => {
-                  if (name === "평균 해결 시간") {
-                    return [
-                      formatHours(typeof value === "number" ? value : null),
-                      name,
-                    ];
-                  }
-                  return [`${value}개`, "완료 수"];
-                }}
+                content={
+                  ScatterTooltip as unknown as React.ComponentProps<
+                    typeof Tooltip
+                  >["content"]
+                }
               />
               <Legend
                 verticalAlign="top"
@@ -173,5 +164,53 @@ export function ThroughputScatterChart({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+type ScatterPoint = {
+  x: number;
+  y: number;
+  bucketLabel: string;
+  sourceLabel: string;
+  color: string;
+};
+
+/**
+ * Custom tooltip so each point shows WHICH period it is (the week/month
+ * label) alongside the throughput and cycle time — a bare scatter tooltip
+ * otherwise can't tell you when the point happened.
+ */
+function ScatterTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload?: ScatterPoint }>;
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  const p = payload[0]?.payload;
+  if (!p) return null;
+  return (
+    <div
+      style={{
+        background: "var(--popover)",
+        border: "1px solid var(--border)",
+        borderRadius: 6,
+        fontSize: 12,
+        padding: "6px 8px",
+        lineHeight: 1.5,
+      }}
+    >
+      <div className="flex items-center gap-1.5 font-medium">
+        <span
+          className="inline-block h-2 w-2 rounded-sm"
+          style={{ background: p.color }}
+        />
+        {p.sourceLabel} · {p.bucketLabel}
+      </div>
+      <div style={{ color: "var(--muted-foreground)" }}>
+        완료 수 {p.x}개 · 평균 해결 시간 {formatHours(p.y)}
+      </div>
+    </div>
   );
 }
