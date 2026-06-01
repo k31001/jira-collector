@@ -10,6 +10,16 @@
 
 ---
 
+## [1.10.0] — 2026-06-01
+
+### Added
+- **배포 업데이트 스크립트** — `scripts/update.ps1` (Windows PowerShell), `scripts/update.sh` (Ubuntu/Debian bash). 동작: `git fetch + reset → npm ci → db:migrate → build → 재시작(docker compose / PM2 / systemd 또는 Windows 서비스 자동 감지) → 90초 health check`. `docker-compose.yml`이 있으면 컨테이너 rebuild만 하고 호스트 빌드는 건너뜀. `FORCE_UPDATE=1` 없이는 dirty working tree에서 중단. 환경변수: `JIRA_COLLECTOR_DIR`, `JIRA_COLLECTOR_BRANCH`, `JIRA_COLLECTOR_PORT`, `JIRA_COLLECTOR_SERVICE`.
+
+### Changed
+- **SummaryCard 토글이 히스토그램·LongTailTable에도 적용** — JQL 카드를 숨기면 그 JQL의 데이터가 평균 해결 시간/미해결 추이 차트뿐 아니라 해결 시간 분포 히스토그램과 오래 걸린 이슈 분석 표에서도 제외됩니다. 라인 차트는 기존처럼 legend 항목은 유지(`hide={!visible}`)하고, 히스토그램과 LongTailTable은 source 자체를 분석 대상에서 떼어냅니다.
+
+---
+
 ## [1.9.1] — 2026-06-01
 
 ### Changed
@@ -78,6 +88,7 @@
 ### Changed
 - **LongTailTable(오래 걸린 이슈 분석)에 10개 단위 페이지네이션** — 임계값 초과 이슈를 10개씩 분할 표시 (이전/다음 버튼 + `X/N 페이지` 카운터 + `총 N개 중 X–Y개 표시`). 임계값/소스/정렬 변경 시 페이지 자동 리셋. 현재 페이지만 렌더링하여 다수 이슈에서 체감 성능 개선.
 
+[1.10.0]: https://github.com/k31001/jira-collector/releases/tag/v1.10.0
 [1.9.1]: https://github.com/k31001/jira-collector/releases/tag/v1.9.1
 [1.9.0]: https://github.com/k31001/jira-collector/releases/tag/v1.9.0
 [1.8.0]: https://github.com/k31001/jira-collector/releases/tag/v1.8.0

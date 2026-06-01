@@ -309,6 +309,16 @@ export function ResolutionDashboardView({
     [perSource],
   );
 
+  // Sources the user kept visible — surfaced to downstream views that
+  // shouldn't keep aggregating data the user already hid. Line charts use
+  // the full `perSource` and rely on `hide={!isVisible}` per Line for the
+  // animation to look natural; histogram bars and the long-tail table just
+  // drop the source entirely.
+  const visiblePerSource = React.useMemo(
+    () => perSource.filter((ps) => visibleJqls[ps.source.sourceId] !== false),
+    [perSource, visibleJqls],
+  );
+
   const series: Series[] = React.useMemo(
     () =>
       perSource.map((ps) => ({
@@ -341,13 +351,13 @@ export function ResolutionDashboardView({
 
   const histograms: SourceHistogram[] = React.useMemo(
     () =>
-      perSource.map((ps) => ({
+      visiblePerSource.map((ps) => ({
         sourceId: ps.source.sourceId,
         label: ps.source.label,
         color: ps.source.color,
         bins: buildHistogram(ps.resolved, histogramBucketHours, 12),
       })),
-    [perSource, histogramBucketHours],
+    [visiblePerSource, histogramBucketHours],
   );
 
   function onBinSelected(info: {
@@ -459,7 +469,7 @@ export function ResolutionDashboardView({
           />
           <LongTailTable
             dashboardId={dashboardId}
-            perSource={perSource.map((ps) => ({
+            perSource={visiblePerSource.map((ps) => ({
               sourceId: ps.source.sourceId,
               sourceLabel: ps.source.label,
               sourceColor: ps.source.color,
