@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type {
+  CustomFacetForFilter,
+  CustomFacetSelection,
   FacetField,
   Facets,
   FacetSelection,
@@ -38,15 +40,26 @@ export function SmartFilters({
   facets,
   value,
   onChange,
+  customFacets = [],
+  customValue = {},
+  onCustomChange,
 }: {
   facets: Facets;
   value: FacetSelection;
   onChange: (v: FacetSelection) => void;
+  customFacets?: CustomFacetForFilter[];
+  customValue?: CustomFacetSelection;
+  onCustomChange?: (v: CustomFacetSelection) => void;
 }) {
-  const activeCount = Object.values(value).reduce(
+  const builtInCount = Object.values(value).reduce(
     (acc, v) => acc + (v?.length ?? 0),
     0,
   );
+  const customCount = Object.values(customValue).reduce(
+    (acc, v) => acc + (v?.length ?? 0),
+    0,
+  );
+  const activeCount = builtInCount + customCount;
 
   function patchField(field: FacetField, next: string[]) {
     const cleaned: FacetSelection = { ...value };
@@ -58,8 +71,20 @@ export function SmartFilters({
     onChange(cleaned);
   }
 
+  function patchCustom(facetId: string, next: string[]) {
+    if (!onCustomChange) return;
+    const cleaned: CustomFacetSelection = { ...customValue };
+    if (next.length === 0) {
+      delete cleaned[facetId];
+    } else {
+      cleaned[facetId] = next;
+    }
+    onCustomChange(cleaned);
+  }
+
   function clearAll() {
     onChange({});
+    onCustomChange?.({});
   }
 
   return (
@@ -79,6 +104,24 @@ export function SmartFilters({
             options={options}
             selected={selected}
             onChange={(next) => patchField(field, next)}
+          />
+        );
+      })}
+      {customFacets.map((facet) => {
+        if (facet.values.length === 0) return null;
+        // Counts in custom facets come from the user definition, not from
+        // the issue corpus, so we surface a placeholder dash instead of a
+        // misleading population count.
+        const options = facet.values.map((v) => ({ value: v.id, count: 0, label: v.name }));
+        const selected = customValue[facet.id] ?? [];
+        return (
+          <FacetPopover
+            key={facet.id}
+            label={facet.name}
+            options={options}
+            selected={selected}
+            onChange={(next) => patchCustom(facet.id, next)}
+            hideCounts
           />
         );
       })}
@@ -103,11 +146,15 @@ function FacetPopover({
   options,
   selected,
   onChange,
+  hideCounts = false,
 }: {
   label: string;
-  options: { value: string; count: number }[];
+  options: { value: string; count: number; label?: string }[];
   selected: string[];
   onChange: (next: string[]) => void;
+  /** Suppress per-option counts (used by custom facets where the count is
+   * not meaningful — values are user-defined, not aggregated from issues). */
+  hideCounts?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
@@ -117,7 +164,10 @@ function FacetPopover({
   const visible = React.useMemo(() => {
     if (!search.trim()) return options;
     const lower = search.toLowerCase();
-    return options.filter((o) => o.value.toLowerCase().includes(lower));
+    return options.filter((o) => {
+      const hay = (o.label ?? o.value).toLowerCase();
+      return hay.includes(lower);
+    });
   }, [options, search]);
 
   function toggle(v: string) {
@@ -176,10 +226,12 @@ function FacetPopover({
                     onChange={() => toggle(o.value)}
                     className="h-3.5 w-3.5"
                   />
-                  <span className="flex-1 truncate">{o.value}</span>
-                  <span className="text-[10px] text-muted-foreground">
-                    {o.count}
-                  </span>
+                  <span className="flex-1 truncate">{o.label ?? o.value}</span>
+                  {!hideCounts && (
+                    <span className="text-[10px] text-muted-foreground">
+                      {o.count}
+                    </span>
+                  )}
                 </label>
               );
             })

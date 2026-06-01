@@ -136,6 +136,30 @@ export const resolutionDashboardSources = sqliteTable(
   }),
 );
 
+export const customFacets = sqliteTable("custom_facets", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at").notNull().default(sql`(unixepoch())`),
+});
+
+export const customFacetValues = sqliteTable(
+  "custom_facet_values",
+  {
+    id: text("id").primaryKey(),
+    facetId: text("facet_id")
+      .notNull()
+      .references(() => customFacets.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    jql: text("jql").notNull(),
+    displayOrder: integer("display_order").notNull().default(0),
+  },
+  (t) => ({
+    byFacet: index("custom_facet_values_facet_idx").on(t.facetId),
+  }),
+);
+
 export type JiraServer = typeof jiraServers.$inferSelect;
 export type NewJiraServer = typeof jiraServers.$inferInsert;
 export type Dashboard = typeof dashboards.$inferSelect;
@@ -151,3 +175,7 @@ export type NewResolutionDashboard = typeof resolutionDashboards.$inferInsert;
 export type ResolutionDashboardSource = typeof resolutionDashboardSources.$inferSelect;
 export type NewResolutionDashboardSource =
   typeof resolutionDashboardSources.$inferInsert;
+export type CustomFacet = typeof customFacets.$inferSelect;
+export type NewCustomFacet = typeof customFacets.$inferInsert;
+export type CustomFacetValue = typeof customFacetValues.$inferSelect;
+export type NewCustomFacetValue = typeof customFacetValues.$inferInsert;

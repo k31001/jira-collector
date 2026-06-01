@@ -10,6 +10,7 @@ import {
   Settings,
   Server,
   Palette,
+  Sliders,
   Tag,
   PlusCircle,
   Star,
@@ -193,6 +194,12 @@ export function Sidebar({
               active={pathname.startsWith("/settings/status-colors")}
               icon={<Palette className="h-4 w-4" />}
               label="상태 컬러"
+            />
+            <SidebarLink
+              href="/settings/smart-filters"
+              active={pathname.startsWith("/settings/smart-filters")}
+              icon={<Sliders className="h-4 w-4" />}
+              label="스마트 필터"
             />
           </ul>
         </div>

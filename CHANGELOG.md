@@ -10,6 +10,22 @@
 
 ---
 
+## [1.9.0] — 2026-06-01
+
+### Added
+- **커스텀 스마트 필터** — 설정에서 새 항목(예: "운영체제")과 그 안의 값(Windows / Linux / macOS)을 만들고, 각 값에 제한된 JQL 표현(`labels in (windows, win10)` 등)을 붙일 수 있습니다. Resolution Time 대시보드의 기존 스마트 필터 옆에 자동 노출되어 같은 방식으로 OR(같은 facet 안)/AND(다른 facet 간) 필터링됩니다.
+  - 새 테이블 `custom_facets` + `custom_facet_values` (drizzle 마이그레이션 `0003_good_frank_castle.sql`).
+  - 신규 `lib/jql-eval.ts` — 제한된 JQL 파서·평가기. 지원 필드: `status`, `assignee`, `reporter`, `priority`, `issuetype`, `labels`, `resolution`. 연산자: `=`, `!=`, `in`, `not in`, `is empty`, `is not empty`. 조합: `AND`. (11개 단위 테스트.)
+  - 신규 설정 페이지 `/settings/smart-filters` — facet/value CRUD UI, JQL 입력 시 즉시 파싱 검증.
+  - 사이드바·설정 허브에 "스마트 필터" 항목 추가.
+  - 선택 상태는 `localStorage`(`resolution-time-custom-filters:{id}`)에 source 단위로 보존.
+- **마일스톤도 SummaryCard 토글에 연동** — JQL 카드를 숨기면 그 JQL에 속한 milestone(예: DVR, PVR) ReferenceLine도 차트에서 사라집니다.
+
+### Changed
+- `mock-jira` 라벨 풀에 `windows`, `linux`, `macos` 추가 (커스텀 facet 로컬 테스트용).
+
+---
+
 ## [1.8.0] — 2026-06-01
 
 ### Added
@@ -55,6 +71,7 @@
 ### Changed
 - **LongTailTable(오래 걸린 이슈 분석)에 10개 단위 페이지네이션** — 임계값 초과 이슈를 10개씩 분할 표시 (이전/다음 버튼 + `X/N 페이지` 카운터 + `총 N개 중 X–Y개 표시`). 임계값/소스/정렬 변경 시 페이지 자동 리셋. 현재 페이지만 렌더링하여 다수 이슈에서 체감 성능 개선.
 
+[1.9.0]: https://github.com/k31001/jira-collector/releases/tag/v1.9.0
 [1.8.0]: https://github.com/k31001/jira-collector/releases/tag/v1.8.0
 [1.7.2]: https://github.com/k31001/jira-collector/releases/tag/v1.7.2
 [1.7.1]: https://github.com/k31001/jira-collector/releases/tag/v1.7.1

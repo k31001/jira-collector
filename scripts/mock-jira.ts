@@ -179,6 +179,9 @@ const LABELS_POOL = [
   "urgent",
   "tech-debt",
   "refactor",
+  "windows",
+  "linux",
+  "macos",
 ];
 
 const COMPONENTS = [

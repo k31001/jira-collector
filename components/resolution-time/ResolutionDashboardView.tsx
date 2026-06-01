@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { updateResolutionDashboard } from "@/actions/resolution-dashboards";
 import {
+  applyCustomFacets,
   applyFacets,
   buildFacets,
   buildHistogram,
@@ -24,10 +25,14 @@ import {
   buildUnresolvedTimeSeries,
   statsForSource,
   withResolutionHours,
+  type CustomFacetForFilter,
+  type CustomFacetSelection,
   type FacetSelection,
   type ResolvedIssue,
   type TimeBucket,
 } from "@/lib/resolution-time";
+import { tryCompileJql } from "@/lib/jql-eval";
+import type { CustomFacetWithValues } from "@/lib/db/queries";
 import type {
   ResolutionDashboardIssuesResult,
   ResolutionSourceResult,
@@ -57,6 +62,7 @@ type Props = {
   initialWindowDays: number;
   initialTimeBucket: TimeBucket;
   initialHistogramBucketHours: number;
+  customFacets: CustomFacetWithValues[];
 };
 
 const WINDOW_OPTIONS = [
@@ -68,6 +74,21 @@ const WINDOW_OPTIONS = [
 ];
 
 const FILTERS_STORAGE_KEY = (id: string) => `resolution-time-filters:${id}`;
+const CUSTOM_FILTERS_STORAGE_KEY = (id: string) =>
+  `resolution-time-custom-filters:${id}`;
+
+function loadCustomFilters(id: string): Record<string, CustomFacetSelection> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(CUSTOM_FILTERS_STORAGE_KEY(id));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, CustomFacetSelection>;
+    if (typeof parsed !== "object" || parsed === null) return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
 const VISIBLE_JQLS_KEY = (id: string) =>
   `resolution-time:visible-jqls:${id}`;
 
@@ -105,7 +126,24 @@ export function ResolutionDashboardView({
   initialWindowDays,
   initialTimeBucket,
   initialHistogramBucketHours,
+  customFacets: rawCustomFacets,
 }: Props) {
+  // Compile each value's JQL once per facet config so we don't reparse on
+  // every render / keystroke. Invalid stored expressions resolve to null and
+  // are skipped at filter time.
+  const compiledCustomFacets = React.useMemo<CustomFacetForFilter[]>(
+    () =>
+      rawCustomFacets.map((f) => ({
+        id: f.id,
+        name: f.name,
+        values: f.values.map((v) => ({
+          id: v.id,
+          name: v.name,
+          compiled: tryCompileJql(v.jql),
+        })),
+      })),
+    [rawCustomFacets],
+  );
   const [windowDays, setWindowDays] = React.useState(initialWindowDays);
   const [timeBucket, setTimeBucket] =
     React.useState<TimeBucket>(initialTimeBucket);
@@ -116,6 +154,18 @@ export function ResolutionDashboardView({
   const [filters, setFilters] = React.useState<Record<string, FacetSelection>>(
     () => loadFilters(dashboardId),
   );
+  const [customFilters, setCustomFilters] = React.useState<
+    Record<string, CustomFacetSelection>
+  >(() => loadCustomFilters(dashboardId));
+
+  React.useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        CUSTOM_FILTERS_STORAGE_KEY(dashboardId),
+        JSON.stringify(customFilters),
+      );
+    } catch {}
+  }, [dashboardId, customFilters]);
 
   const [visibleJqls, setVisibleJqls] = React.useState<Record<string, boolean>>(
     () => loadVisibleJqls(dashboardId),
@@ -197,10 +247,17 @@ export function ResolutionDashboardView({
     [query.data?.sources],
   );
 
-  // Apply per-source smart filters, then compute resolution stats
+  // Apply per-source smart filters (both built-in and custom), then compute
+  // resolution stats. Custom facets run after the built-in ones so users see
+  // a count that reflects every active filter.
   const perSource = React.useMemo(() => {
     return sources.map((s) => {
-      const filtered = applyFacets(s.issues, filters[s.sourceId] ?? {});
+      const builtInFiltered = applyFacets(s.issues, filters[s.sourceId] ?? {});
+      const filtered = applyCustomFacets(
+        builtInFiltered,
+        compiledCustomFacets,
+        customFilters[s.sourceId] ?? {},
+      );
       const resolved = withResolutionHours(filtered);
       return {
         source: s,
@@ -208,7 +265,7 @@ export function ResolutionDashboardView({
         resolved,
       };
     });
-  }, [sources, filters]);
+  }, [sources, filters, customFilters, compiledCustomFacets]);
 
   const summary: SummaryItem[] = React.useMemo(
     () =>
@@ -278,6 +335,10 @@ export function ResolutionDashboardView({
     setFilters((prev) => ({ ...prev, [sourceId]: next }));
   }
 
+  function patchCustomFilter(sourceId: string, next: CustomFacetSelection) {
+    setCustomFilters((prev) => ({ ...prev, [sourceId]: next }));
+  }
+
   return (
     <div className="flex-1 space-y-4 p-6">
       <IssueListDialog
@@ -341,7 +402,10 @@ export function ResolutionDashboardView({
             <PerSourceFilters
               sources={sources}
               filters={filters}
+              customFilters={customFilters}
+              customFacets={compiledCustomFacets}
               onFilterChange={patchFilter}
+              onCustomFilterChange={patchCustomFilter}
             />
           )}
 
@@ -467,11 +531,17 @@ function ControlsBar({
 function PerSourceFilters({
   sources,
   filters,
+  customFilters,
+  customFacets,
   onFilterChange,
+  onCustomFilterChange,
 }: {
   sources: ResolutionSourceResult[];
   filters: Record<string, FacetSelection>;
+  customFilters: Record<string, CustomFacetSelection>;
+  customFacets: CustomFacetForFilter[];
   onFilterChange: (sourceId: string, next: FacetSelection) => void;
+  onCustomFilterChange: (sourceId: string, next: CustomFacetSelection) => void;
 }) {
   return (
     <Card>
@@ -480,6 +550,7 @@ function PerSourceFilters({
           if (s.issues.length === 0) return null;
           const facets = buildFacets(s.issues);
           const value = filters[s.sourceId] ?? {};
+          const customValue = customFilters[s.sourceId] ?? {};
           return (
             <div
               key={s.sourceId}
@@ -499,6 +570,11 @@ function PerSourceFilters({
                 facets={facets}
                 value={value}
                 onChange={(next) => onFilterChange(s.sourceId, next)}
+                customFacets={customFacets}
+                customValue={customValue}
+                onCustomChange={(next) =>
+                  onCustomFilterChange(s.sourceId, next)
+                }
               />
             </div>
           );

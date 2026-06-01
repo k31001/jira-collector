@@ -385,6 +385,28 @@ export type Facets = {
 
 export type FacetSelection = Partial<Record<FacetField, string[]>>;
 
+/**
+ * Selection state for the user-defined "custom" facets (e.g., "운영체제").
+ * Outer key is the facet id, inner array holds the ids of selected values.
+ */
+export type CustomFacetSelection = Record<string, string[]>;
+
+/**
+ * The shape consumed by the smart-filter UI and the apply step. Each value
+ * carries a compiled predicate so the dashboard view doesn't repeatedly parse
+ * the same JQL on every render. `compiled === null` means the stored JQL was
+ * invalid and we simply skip that value at filter time.
+ */
+export type CustomFacetForFilter = {
+  id: string;
+  name: string;
+  values: Array<{
+    id: string;
+    name: string;
+    compiled: ((issue: NormalizedIssue) => boolean) | null;
+  }>;
+};
+
 /** Aggregate field-value counts. Useful to populate filter dropdowns. */
 export function buildFacets(issues: NormalizedIssue[]): Facets {
   const counts: Record<FacetField, Map<string, number>> = {
@@ -457,7 +479,31 @@ export function applyFacets(
     checks.push((i) => i.labels.some((l) => set.has(l)));
   }
   if (checks.length === 0) return issues;
-  return issues.filter((i) => checks.every((c) => c(i)));
+  return issues.filter((i) => checks.every((fn) => fn(i)));
+}
+
+/**
+ * Apply custom (user-defined, JQL-backed) facets. Like `applyFacets`, values
+ * within a single facet are OR'd and distinct facets are AND'd. Selected
+ * values whose JQL didn't compile are silently ignored.
+ */
+export function applyCustomFacets(
+  issues: NormalizedIssue[],
+  customFacets: CustomFacetForFilter[],
+  selection: CustomFacetSelection,
+): NormalizedIssue[] {
+  const checks: ((i: NormalizedIssue) => boolean)[] = [];
+  for (const facet of customFacets) {
+    const selectedIds = selection[facet.id];
+    if (!selectedIds || selectedIds.length === 0) continue;
+    const preds = facet.values
+      .filter((v) => selectedIds.includes(v.id) && v.compiled !== null)
+      .map((v) => v.compiled as (i: NormalizedIssue) => boolean);
+    if (preds.length === 0) continue;
+    checks.push((i) => preds.some((p) => p(i)));
+  }
+  if (checks.length === 0) return issues;
+  return issues.filter((i) => checks.every((fn) => fn(i)));
 }
 
 /* -------------------------------------------------------------------------- */

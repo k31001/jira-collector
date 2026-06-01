@@ -1,5 +1,5 @@
 import "server-only";
-import { eq, and } from "drizzle-orm";
+import { eq, and, asc } from "drizzle-orm";
 import { db } from "./client";
 import {
   jiraServers,
@@ -9,6 +9,8 @@ import {
   customStatuses,
   customStatusMappings,
   statusColors,
+  customFacets,
+  customFacetValues,
 } from "./schema";
 import { decrypt } from "@/lib/crypto";
 import type { JiraServerConfig } from "@/lib/jira/types";
@@ -91,6 +93,61 @@ export function getNote(dashboardId: string, serverId: string, issueKey: string)
       ),
     )
     .get();
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Custom smart-filter facets (global)                                         */
+/* -------------------------------------------------------------------------- */
+
+export type CustomFacetWithValues = {
+  id: string;
+  name: string;
+  displayOrder: number;
+  values: Array<{
+    id: string;
+    name: string;
+    jql: string;
+    displayOrder: number;
+  }>;
+};
+
+/**
+ * Return every facet with its values inlined, sorted by display order.
+ * Loaded fresh on each call — the table is small and only touched from the
+ * resolution-time dashboard load and the settings page.
+ */
+export function listCustomFacetsWithValues(): CustomFacetWithValues[] {
+  const facets = db
+    .select()
+    .from(customFacets)
+    .orderBy(asc(customFacets.displayOrder), asc(customFacets.createdAt))
+    .all();
+  if (facets.length === 0) return [];
+  const allValues = db
+    .select()
+    .from(customFacetValues)
+    .orderBy(
+      asc(customFacetValues.facetId),
+      asc(customFacetValues.displayOrder),
+    )
+    .all();
+  const valuesByFacet = new Map<string, typeof allValues>();
+  for (const v of allValues) {
+    const arr = valuesByFacet.get(v.facetId);
+    if (arr) arr.push(v);
+    else valuesByFacet.set(v.facetId, [v]);
+  }
+  return facets.map((f) => ({
+    id: f.id,
+    name: f.name,
+    displayOrder: f.displayOrder,
+    values: (valuesByFacet.get(f.id) ?? []).map((v) => ({
+      id: v.id,
+      name: v.name,
+      jql: v.jql,
+      displayOrder: v.displayOrder,
+    })),
+  }));
 }
 
 export async function getStatusContext() {

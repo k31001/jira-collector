@@ -106,6 +106,9 @@ export function TimeSeriesChart({
       label: d.label as string,
     }));
     const placed = milestones
+      // Hide milestones whose owning JQL is currently toggled off — they're
+      // colored by sourceId and only make sense alongside that line.
+      .filter((m) => isVisible(m.sourceId))
       .map((m) => {
         const date = new Date(m.date);
         if (Number.isNaN(date.getTime())) return null;
@@ -121,7 +124,7 @@ export function TimeSeriesChart({
       bucketCounts.set(m.x, idx + 1);
       return { ...m, stackIdx: idx };
     });
-  }, [data, milestones]);
+  }, [data, milestones, isVisible]);
 
   return (
     <Card>

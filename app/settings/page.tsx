@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Server, Tag, Palette } from "lucide-react";
+import { Server, Tag, Palette, Sliders } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
@@ -21,6 +21,13 @@ const items = [
     title: "상태 컬러 오버라이드",
     description: "원본 Jira 상태의 표시 색상을 사용자 지정합니다.",
     icon: Palette,
+  },
+  {
+    href: "/settings/smart-filters",
+    title: "커스텀 스마트 필터",
+    description:
+      "라벨 조합 같은 커스텀 분류를 직접 정의해 Resolution Time 대시보드 필터로 사용합니다.",
+    icon: Sliders,
   },
 ];
 
