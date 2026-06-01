@@ -10,6 +10,22 @@
 
 ---
 
+## [1.8.0] — 2026-06-01
+
+### Added
+- **Lite 모드 + 코멘트 lazy load** — 메인 이슈 대시보드(`IssuesTable`)는 이제 `/api/dashboards/[id]/issues?lite=1`로 호출되어 search 응답에서 `comment` 필드가 제거됨. 페이로드가 크게 줄어 cold load 단축 (코멘트가 많은 프로젝트에서 효과 큼). 보이는 페이지(30개)의 최신 코멘트는 새 batch 엔드포인트로 lazy fetch.
+- **`POST /api/dashboards/[id]/comments`** — `{requests: [{serverId, key}, ...]}` 받아 server별 그룹화 후 병렬 fetch. 응답은 `{comments: {"serverId::key": {author, body, created} | null}}`. 서버별 동시 호출은 8개로 제한.
+- **`getLatestComment(server, key)`** in `lib/jira/client.ts` — `/issue/{key}/comment?orderBy=-created&maxResults=1` 엔드포인트로 단건 최신 코멘트 조회. `orderBy`가 무시되는 구버전 Jira에서도 안전하도록 응답에서 `created` 최대값으로 fallback pick.
+- **`DEFAULT_FIELDS_NO_COMMENT`** export — search 호출에서 `comment` 필드만 제외한 기본 fields 리스트.
+- **mock-jira `fields` 프로젝션 지원** — 실제 Jira처럼 search/`/issue/{key}`에서 요청한 fields만 반환. `/issue/{key}/comment` 엔드포인트(orderBy, maxResults 지원)도 구현해 lazy load 테스트가 end-to-end로 가능.
+
+### Changed
+- `IssuesTable` "최근 코멘트" 셀: 코멘트 미도착 상태에서 spinner 표시(`Loader2`). null이면 "—" 그대로.
+- Markdown/CSV export: lazy 캐시에서 코멘트 body fallback 조회.
+- `data` query result memoization 추가 (lint warning 해결).
+
+---
+
 ## [1.7.2] — 2026-06-01
 
 ### Performance
@@ -39,6 +55,7 @@
 ### Changed
 - **LongTailTable(오래 걸린 이슈 분석)에 10개 단위 페이지네이션** — 임계값 초과 이슈를 10개씩 분할 표시 (이전/다음 버튼 + `X/N 페이지` 카운터 + `총 N개 중 X–Y개 표시`). 임계값/소스/정렬 변경 시 페이지 자동 리셋. 현재 페이지만 렌더링하여 다수 이슈에서 체감 성능 개선.
 
+[1.8.0]: https://github.com/k31001/jira-collector/releases/tag/v1.8.0
 [1.7.2]: https://github.com/k31001/jira-collector/releases/tag/v1.7.2
 [1.7.1]: https://github.com/k31001/jira-collector/releases/tag/v1.7.1
 [1.7.0]: https://github.com/k31001/jira-collector/releases/tag/v1.7.0

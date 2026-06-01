@@ -171,7 +171,9 @@ export function IssuesTable({
   const query = useQuery<DashboardIssuesResult>({
     queryKey: ["issues", dashboardId],
     queryFn: async () => {
-      const res = await fetch(`/api/dashboards/${dashboardId}/issues`, {
+      // `lite=1` strips the heavy `comment` field from the upstream Jira
+      // search. Comments are fetched lazily for the visible page below.
+      const res = await fetch(`/api/dashboards/${dashboardId}/issues?lite=1`, {
         cache: "no-store",
       });
       if (!res.ok) throw new Error("이슈 fetch 실패");
@@ -180,6 +182,22 @@ export function IssuesTable({
     refetchInterval: refreshIntervalSec > 0 ? refreshIntervalSec * 1000 : false,
     staleTime: refreshIntervalSec * 1000,
   });
+
+  // Lazy comment cache: lookups keyed by `${serverId}::${key}`. `undefined`
+  // means "not fetched yet" (show spinner), `null` means "no comment exists"
+  // (show em-dash). Reset whenever a fresh upstream fetch lands so stale
+  // comments don't leak across data revisions.
+  type LazyComment = {
+    author?: string;
+    body: string;
+    created: string;
+  };
+  const [lazyComments, setLazyComments] = React.useState<
+    Record<string, LazyComment | null>
+  >({});
+  React.useEffect(() => {
+    if (query.data?.fetchedAt) setLazyComments({});
+  }, [query.data?.fetchedAt]);
 
   React.useEffect(() => {
     if (query.data?.errors?.length) {
@@ -240,8 +258,24 @@ export function IssuesTable({
         header: "최근 코멘트",
         enableSorting: false,
         cell: ({ row }) => {
-          const c = row.original.latestComment;
-          if (!c) return <span className="text-muted-foreground text-xs">—</span>;
+          const eager = row.original.latestComment;
+          const lazyKey = `${row.original.serverId}::${row.original.key}`;
+          const lazy = lazyComments[lazyKey];
+          // Priority: eager (from /issues route in non-lite mode) > lazy fetch.
+          const c = eager ?? lazy;
+          if (c === null) {
+            return <span className="text-muted-foreground text-xs">—</span>;
+          }
+          if (c === undefined) {
+            return (
+              <span
+                className="inline-flex items-center gap-1 text-muted-foreground text-xs"
+                aria-label="코멘트 불러오는 중"
+              >
+                <Loader2 className="h-3 w-3 animate-spin" />
+              </span>
+            );
+          }
           const body = stripHtml(c.body);
           return (
             <div className="min-w-[200px] max-w-[360px]">
@@ -360,10 +394,13 @@ export function IssuesTable({
         ),
       },
     ],
-    [dashboardId],
+    [dashboardId, lazyComments],
   );
 
-  const data = query.data?.issues ?? [];
+  const data = React.useMemo(
+    () => query.data?.issues ?? [],
+    [query.data?.issues],
+  );
 
   // Precompute one lowercase haystack per issue, then reuse on every keystroke.
   // Recomputing the haystack inside the search useMemo would re-allocate
@@ -447,6 +484,70 @@ export function IssuesTable({
     setPagination((p) => (p.pageIndex === 0 ? p : { ...p, pageIndex: 0 }));
   }, [search, statusFilter, filtered.length]);
 
+  // Compute the (serverId, key) pairs for the currently-rendered page. Used
+  // to drive the lazy comment batch loader below.
+  const currentPageRows = table.getRowModel().rows;
+  const visibleKeysSignature = React.useMemo(
+    () =>
+      currentPageRows
+        .map((r) => `${r.original.serverId}::${r.original.key}`)
+        .sort()
+        .join("|"),
+    [currentPageRows],
+  );
+
+  // Batch-fetch latest comments for the visible page. Skips keys already
+  // cached, including ones eagerly populated on the issue itself.
+  React.useEffect(() => {
+    if (currentPageRows.length === 0) return;
+    const missing: Array<{ serverId: string; key: string }> = [];
+    for (const r of currentPageRows) {
+      if (r.original.latestComment) continue; // eager from server
+      const k = `${r.original.serverId}::${r.original.key}`;
+      if (k in lazyComments) continue; // already fetched (or known absent)
+      missing.push({ serverId: r.original.serverId, key: r.original.key });
+    }
+    if (missing.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/dashboards/${dashboardId}/comments`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ requests: missing }),
+          },
+        );
+        if (!res.ok) return;
+        const json = (await res.json()) as {
+          comments: Record<string, LazyComment | null>;
+        };
+        if (cancelled) return;
+        setLazyComments((prev) => {
+          const next = { ...prev };
+          for (const k of Object.keys(json.comments)) {
+            next[k] = json.comments[k];
+          }
+          // Anything we asked for but didn't get back: mark as null so we
+          // don't re-request on every render.
+          for (const m of missing) {
+            const k = `${m.serverId}::${m.key}`;
+            if (!(k in next)) next[k] = null;
+          }
+          return next;
+        });
+      } catch {
+        // Network errors silently leave entries undefined; the cell shows a
+        // spinner, and the next render attempt will re-trigger this effect.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleKeysSignature, dashboardId]);
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -474,7 +575,9 @@ export function IssuesTable({
     const sep = `| ${visibleCols.map(() => "---").join(" | ")} |`;
     const body = rows.map((r) => {
       const issue = r.original;
-      const cells = visibleCols.map((c) => mdCell(c.id as ColumnKey, issue));
+      const cells = visibleCols.map((c) =>
+        mdCell(c.id as ColumnKey, issue, lazyComments),
+      );
       return `| ${cells.join(" | ")} |`;
     });
     const md = [header, sep, ...body].join("\n");
@@ -487,7 +590,9 @@ export function IssuesTable({
     const visibleCols = table.getVisibleLeafColumns();
     const header = visibleCols.map((c) => columnLabel(c.id as ColumnKey));
     const body = rows.map((r) =>
-      visibleCols.map((c) => csvCell(c.id as ColumnKey, r.original)),
+      visibleCols.map((c) =>
+        csvCell(c.id as ColumnKey, r.original, lazyComments),
+      ),
     );
     const csv = [header, ...body]
       .map((line) => line.map(escapeCsv).join(","))
@@ -815,7 +920,22 @@ function stripHtml(s: string) {
   return s.replace(/<[^>]*>/g, "");
 }
 
-function mdCell(key: ColumnKey, issue: NormalizedIssue): string {
+type CommentLike = { body: string };
+
+function resolveCommentBody(
+  issue: NormalizedIssue,
+  lazy: Record<string, CommentLike | null>,
+): string {
+  if (issue.latestComment) return issue.latestComment.body;
+  const k = `${issue.serverId}::${issue.key}`;
+  return lazy[k]?.body ?? "";
+}
+
+function mdCell(
+  key: ColumnKey,
+  issue: NormalizedIssue,
+  lazyComments: Record<string, CommentLike | null>,
+): string {
   switch (key) {
     case "key":
       return `[${issue.key}](${issue.url})`;
@@ -824,7 +944,10 @@ function mdCell(key: ColumnKey, issue: NormalizedIssue): string {
     case "summary":
       return issue.summary.replace(/\|/g, "\\|");
     case "latestComment":
-      return truncate(stripHtml(issue.latestComment?.body ?? ""), 80).replace(/\|/g, "\\|");
+      return truncate(
+        stripHtml(resolveCommentBody(issue, lazyComments)),
+        80,
+      ).replace(/\|/g, "\\|");
     case "note":
       return (issue.note ?? "").replace(/\|/g, "\\|").replace(/\n/g, " / ");
     case "assignee":
@@ -848,7 +971,11 @@ function mdCell(key: ColumnKey, issue: NormalizedIssue): string {
   }
 }
 
-function csvCell(key: ColumnKey, issue: NormalizedIssue): string {
+function csvCell(
+  key: ColumnKey,
+  issue: NormalizedIssue,
+  lazyComments: Record<string, CommentLike | null>,
+): string {
   switch (key) {
     case "key":
       return issue.key;
@@ -857,7 +984,7 @@ function csvCell(key: ColumnKey, issue: NormalizedIssue): string {
     case "summary":
       return issue.summary;
     case "latestComment":
-      return stripHtml(issue.latestComment?.body ?? "");
+      return stripHtml(resolveCommentBody(issue, lazyComments));
     case "note":
       return issue.note ?? "";
     case "assignee":

@@ -1,5 +1,6 @@
 import "server-only";
 import { JiraError, type JiraAuth, type JiraServerConfig, type RawJiraIssue } from "./types";
+import { commentBodyToText } from "./adf";
 
 export const DEFAULT_FIELDS = [
   "summary",
@@ -14,6 +15,15 @@ export const DEFAULT_FIELDS = [
   "labels",
   "comment",
 ];
+
+/**
+ * Same as DEFAULT_FIELDS but without the `comment` field. Used by `lite`
+ * search paths where comments are fetched lazily per-row via the
+ * `/issue/{key}/comment` endpoint to keep the initial search payload small.
+ */
+export const DEFAULT_FIELDS_NO_COMMENT = DEFAULT_FIELDS.filter(
+  (f) => f !== "comment",
+);
 
 export function isCloudHost(baseUrl: string): boolean {
   try {
@@ -167,6 +177,68 @@ export async function getIssue(
     { method: "GET" },
   );
   return (await res.json()) as RawJiraIssue;
+}
+
+/**
+ * Fetch only the most recent comment for a single issue. Used by the lazy
+ * comment loader so the issue search can omit the heavy `comment` field.
+ *
+ * Tries the dedicated `/issue/{key}/comment` endpoint with
+ * `orderBy=-created&maxResults=1`. If the server ignores `orderBy` (older
+ * DC instances), the response still gives us the first page in creation
+ * order — we then fall back to grabbing the last entry.
+ */
+export type LatestCommentResponse = {
+  author?: string;
+  body: string;
+  created: string;
+};
+
+export async function getLatestComment(
+  server: JiraServerConfig,
+  issueKey: string,
+): Promise<LatestCommentResponse | null> {
+  const apiPath = isCloudHost(server.baseUrl)
+    ? "/rest/api/3/issue"
+    : "/rest/api/2/issue";
+  const params = new URLSearchParams({
+    orderBy: "-created",
+    maxResults: "1",
+    expand: "renderedBody",
+  });
+  const res = await jiraFetch(
+    server,
+    `${apiPath}/${encodeURIComponent(issueKey)}/comment?${params}`,
+    { method: "GET" },
+  );
+  const data = (await res.json()) as {
+    comments?: Array<{
+      author?: { displayName?: string };
+      body?: unknown;
+      renderedBody?: unknown;
+      created?: string;
+    }>;
+  };
+  const list = data.comments ?? [];
+  if (list.length === 0) return null;
+  // If the server honored `-created` we get the latest first. If not, the
+  // default ASC order means we want the LAST entry. Pick by `created` to
+  // be safe.
+  let pick = list[0];
+  for (const c of list) {
+    if (
+      c.created &&
+      pick.created &&
+      Date.parse(c.created) > Date.parse(pick.created)
+    ) {
+      pick = c;
+    }
+  }
+  return {
+    author: pick.author?.displayName,
+    body: commentBodyToText(pick),
+    created: pick.created ?? "",
+  };
 }
 
 export async function getMyself(server: JiraServerConfig) {

@@ -542,6 +542,30 @@ function seedTeamB(baseUrl: string): Issue[] {
   ];
 }
 
+/**
+ * Mimic Jira's `fields` projection on the search/issue responses. Caller
+ * passes a list like `["summary", "status", ...]`; we drop fields not in
+ * the list. When `fields` is undefined we return the issue unchanged.
+ */
+function projectFields(issue: Issue, fields: string[] | undefined): Issue {
+  if (!fields || fields.length === 0) return issue;
+  const include = new Set(fields);
+  const f = issue.fields;
+  const filtered = {} as Issue["fields"];
+  if (include.has("summary")) filtered.summary = f.summary;
+  if (include.has("status")) filtered.status = f.status;
+  if (include.has("assignee")) filtered.assignee = f.assignee;
+  if (include.has("reporter")) filtered.reporter = f.reporter;
+  if (include.has("created")) filtered.created = f.created;
+  if (include.has("updated")) filtered.updated = f.updated;
+  if (include.has("resolutiondate")) filtered.resolutiondate = f.resolutiondate;
+  if (include.has("priority")) filtered.priority = f.priority;
+  if (include.has("issuetype")) filtered.issuetype = f.issuetype;
+  if (include.has("labels")) filtered.labels = f.labels;
+  if (include.has("comment")) filtered.comment = f.comment;
+  return { ...issue, fields: filtered };
+}
+
 function filterByJql(issues: Issue[], jql: string): Issue[] {
   if (!jql || !jql.trim()) return issues;
   const q = jql;
@@ -685,11 +709,20 @@ function startServer(opts: { port: number; name: string; issues: (baseUrl: strin
     if (url.pathname === "/rest/api/2/search" && req.method === "POST") {
       try {
         const body = await readBody(req);
-        const parsed = body ? (JSON.parse(body) as { jql?: string; startAt?: number; maxResults?: number }) : {};
+        const parsed = body
+          ? (JSON.parse(body) as {
+              jql?: string;
+              startAt?: number;
+              maxResults?: number;
+              fields?: string[];
+            })
+          : {};
         const filtered = filterByJql(issues, parsed.jql ?? "");
         const startAt = parsed.startAt ?? 0;
         const maxResults = parsed.maxResults ?? 50;
-        const page = filtered.slice(startAt, startAt + maxResults);
+        const page = filtered
+          .slice(startAt, startAt + maxResults)
+          .map((iss) => projectFields(iss, parsed.fields));
         jsonResponse(res, 200, {
           startAt,
           maxResults,
@@ -711,7 +744,38 @@ function startServer(opts: { port: number; name: string; issues: (baseUrl: strin
         jsonResponse(res, 404, { errorMessages: [`Issue ${issueMatch[1]} not found`], errors: {} });
         return;
       }
-      jsonResponse(res, 200, issue);
+      const fieldsParam = url.searchParams.get("fields");
+      const fields = fieldsParam ? fieldsParam.split(",") : undefined;
+      jsonResponse(res, 200, projectFields(issue, fields));
+      return;
+    }
+    const commentMatch = url.pathname.match(
+      /^\/rest\/api\/2\/issue\/([A-Z][A-Z0-9_]*-\d+)\/comment$/i,
+    );
+    if (commentMatch && req.method === "GET") {
+      const issue = issueMap.get(commentMatch[1].toUpperCase());
+      if (!issue) {
+        jsonResponse(res, 404, {
+          errorMessages: [`Issue ${commentMatch[1]} not found`],
+          errors: {},
+        });
+        return;
+      }
+      const comments = issue.fields.comment.comments;
+      const orderBy = url.searchParams.get("orderBy") ?? "created";
+      const maxResults = Number(url.searchParams.get("maxResults") ?? 100);
+      const sorted = [...comments].sort((a, b) => {
+        const av = Date.parse(a.created);
+        const bv = Date.parse(b.created);
+        return orderBy === "-created" ? bv - av : av - bv;
+      });
+      const page = sorted.slice(0, maxResults);
+      jsonResponse(res, 200, {
+        startAt: 0,
+        maxResults,
+        total: comments.length,
+        comments: page,
+      });
       return;
     }
     if (url.pathname === "/browse" || url.pathname.startsWith("/browse/")) {

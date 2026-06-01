@@ -8,7 +8,7 @@ import {
 } from "@/lib/db/queries";
 import type { DashboardIssuesResult, NormalizedIssue, SourceError } from "./types";
 import { JiraError } from "./types";
-import { getIssue, searchIssues } from "./client";
+import { DEFAULT_FIELDS_NO_COMMENT, getIssue, searchIssues } from "./client";
 import { normalizeIssue } from "./normalize";
 import { parseIssueList } from "./url-parser";
 import { db } from "@/lib/db/client";
@@ -16,7 +16,7 @@ import { jiraServers } from "@/lib/db/schema";
 
 const URL_CONCURRENCY = 8;
 
-async function runWithConcurrency<T, R>(
+export async function runWithConcurrency<T, R>(
   items: T[],
   limit: number,
   fn: (item: T) => Promise<R>,
@@ -42,7 +42,13 @@ async function runWithConcurrency<T, R>(
 
 export async function fetchDashboardIssues(
   dashboardId: string,
+  options: { lite?: boolean } = {},
 ): Promise<DashboardIssuesResult> {
+  // When `lite` is set, we skip the heaviest field (`comment`) in the upstream
+  // Jira search. Comments are then fetched on demand by the visible-page
+  // batch endpoint. Cuts initial fetch payload dramatically on
+  // comment-heavy projects.
+  const lite = options.lite === true;
   const dashboard = getDashboard(dashboardId);
   if (!dashboard) {
     return { issues: [], errors: [], fetchedAt: Date.now() };
@@ -81,7 +87,9 @@ export async function fetchDashboardIssues(
       try {
         if (source.sourceType === "jql") {
           if (!source.jql || !source.jql.trim()) return;
-          const raws = await searchIssues(serverConfig, source.jql);
+          const raws = await searchIssues(serverConfig, source.jql, {
+            fields: lite ? DEFAULT_FIELDS_NO_COMMENT : undefined,
+          });
           for (const r of raws) {
             const key = `${serverConfig.id}::${r.key}`;
             if (seen.has(key)) continue;
@@ -125,7 +133,10 @@ export async function fetchDashboardIssues(
           const fetchResults = await runWithConcurrency(
             parsed,
             URL_CONCURRENCY,
-            (p) => getIssue(serverConfig, p.issueKey),
+            (p) =>
+              getIssue(serverConfig, p.issueKey, {
+                fields: lite ? DEFAULT_FIELDS_NO_COMMENT : undefined,
+              }),
           );
           fetchResults.forEach((r, i) => {
             if (r.status === "fulfilled") {
