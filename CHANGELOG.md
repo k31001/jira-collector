@@ -10,6 +10,13 @@
 
 ---
 
+## [1.7.2] — 2026-06-01
+
+### Performance
+- **Jira API page size 100 → 500** — `searchIssuesCloud`, `searchIssuesServer` 기본 `maxResults`를 100에서 500으로 상향. 2000 이슈 기준 순차 round-trip 수가 **20회 → 4회**로 감소 (cold load 단축). 실제 페이지 크기는 Jira 인스턴스의 cap에 따라 자동 조정됨 — DC는 보통 ~1000까지 honoring, Cloud는 인스턴스/엔드포인트마다 다름. 호출자가 `options.maxResults`로 override 가능.
+
+---
+
 ## [1.7.1] — 2026-06-01
 
 ### Performance
@@ -32,6 +39,7 @@
 ### Changed
 - **LongTailTable(오래 걸린 이슈 분석)에 10개 단위 페이지네이션** — 임계값 초과 이슈를 10개씩 분할 표시 (이전/다음 버튼 + `X/N 페이지` 카운터 + `총 N개 중 X–Y개 표시`). 임계값/소스/정렬 변경 시 페이지 자동 리셋. 현재 페이지만 렌더링하여 다수 이슈에서 체감 성능 개선.
 
+[1.7.2]: https://github.com/k31001/jira-collector/releases/tag/v1.7.2
 [1.7.1]: https://github.com/k31001/jira-collector/releases/tag/v1.7.1
 [1.7.0]: https://github.com/k31001/jira-collector/releases/tag/v1.7.0
 

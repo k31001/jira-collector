@@ -65,6 +65,13 @@ async function jiraFetch(
  * Cloud (Aug 2025+) replaced `/rest/api/2/search` and `/rest/api/3/search` with
  * `/rest/api/3/search/jql` which uses token-based pagination (nextPageToken)
  * and no longer returns a total. Server/DC still uses the legacy v2/search.
+ *
+ * Default page size is 500 to minimize sequential round-trips on large
+ * dashboards (the old default of 100 meant 20 round-trips for 2000 issues).
+ * Jira clamps to its own per-instance maximum if 500 is too high — Cloud's
+ * `/search/jql` typically allows several hundred to a few thousand per
+ * request; legacy Cloud `/search` capped at 100; DC honors up to ~1000.
+ * The caller can override via options.maxResults.
  */
 async function searchIssuesCloud(
   server: JiraServerConfig,
@@ -72,7 +79,7 @@ async function searchIssuesCloud(
   options: { fields?: string[]; maxResults?: number; limit?: number },
 ): Promise<RawJiraIssue[]> {
   const fields = options.fields ?? DEFAULT_FIELDS;
-  const pageSize = options.maxResults ?? 100;
+  const pageSize = options.maxResults ?? 500;
   const limit = options.limit ?? 1000;
   const issues: RawJiraIssue[] = [];
   let nextPageToken: string | undefined;
@@ -107,7 +114,7 @@ async function searchIssuesServer(
   options: { fields?: string[]; maxResults?: number; limit?: number },
 ): Promise<RawJiraIssue[]> {
   const fields = options.fields ?? DEFAULT_FIELDS;
-  const pageSize = options.maxResults ?? 100;
+  const pageSize = options.maxResults ?? 500;
   const limit = options.limit ?? 1000;
   const issues: RawJiraIssue[] = [];
   let startAt = 0;
