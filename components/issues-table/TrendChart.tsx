@@ -30,6 +30,8 @@ type DataPoint = {
   unresolved: number; // created - resolved at that point (snapshot)
 };
 
+const MS_PER_DAY = 86400_000;
+
 /**
  * Cumulative ("burn-up") series within the selected window.
  *
@@ -37,30 +39,36 @@ type DataPoint = {
  * of the day it happened. Events that occurred before the window are
  * dropped into the first bucket so day 0 reflects the running total at
  * the start. Buckets are then turned into running sums.
+ *
+ * Hot path is O(issues × 2 events) — the previous implementation called
+ * `new Date(iso).toISOString().slice(0,10)` per event, which dominated the
+ * runtime at thousands of issues. We now bucket by a numeric day index
+ * relative to the window start and skip Date object construction entirely.
  */
 function buildSeries(issues: NormalizedIssue[], days: number): DataPoint[] {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const out: DataPoint[] = [];
-  const keyToIdx = new Map<string, number>();
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    const key = d.toISOString().slice(0, 10);
+  const todayMs = today.getTime();
+  const windowStartMs = todayMs - (days - 1) * MS_PER_DAY;
+
+  const out: DataPoint[] = new Array(days);
+  for (let i = 0; i < days; i++) {
+    const dMs = windowStartMs + i * MS_PER_DAY;
+    const d = new Date(dMs);
+    const key =
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     const label = `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    keyToIdx.set(key, out.length);
-    out.push({ date: key, label, created: 0, resolved: 0, unresolved: 0 });
+    out[i] = { date: key, label, created: 0, resolved: 0, unresolved: 0 };
   }
 
   function bucketIndex(iso: string | undefined): number | null {
     if (!iso) return null;
-    const k = new Date(iso).toISOString().slice(0, 10);
-    const exact = keyToIdx.get(k);
-    if (exact !== undefined) return exact;
-    // Older than window start → fold into the first bucket so cumulative
-    // totals start above zero where applicable.
-    if (new Date(iso).getTime() < new Date(out[0].date).getTime()) return 0;
-    return null;
+    const ms = Date.parse(iso);
+    if (!Number.isFinite(ms)) return null;
+    if (ms < windowStartMs) return 0; // fold older events into day 0
+    const idx = Math.floor((ms - windowStartMs) / MS_PER_DAY);
+    if (idx >= days) return null; // future events outside window
+    return idx;
   }
 
   for (const issue of issues) {

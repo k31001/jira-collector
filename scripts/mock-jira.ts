@@ -442,14 +442,14 @@ function seedTeamA(baseUrl: string): Issue[] {
       baseUrl,
       projectKey: "PROJ",
       startKey: 1001,
-      count: 30,
+      count: 250,
       seed: 0xa5a5a5,
     }),
     ...generateBulkIssues({
       baseUrl,
       projectKey: "BUG",
       startKey: 1001,
-      count: 25,
+      count: 100,
       seed: 0x424242,
     }),
   ];
@@ -536,7 +536,7 @@ function seedTeamB(baseUrl: string): Issue[] {
       baseUrl,
       projectKey: "FEAT",
       startKey: 1001,
-      count: 45,
+      count: 150,
       seed: 0xfeed42,
     }),
   ];

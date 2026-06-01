@@ -365,6 +365,37 @@ export function IssuesTable({
 
   const data = query.data?.issues ?? [];
 
+  // Precompute one lowercase haystack per issue, then reuse on every keystroke.
+  // Recomputing the haystack inside the search useMemo would re-allocate
+  // O(N) strings and lower-case calls per keystroke; doing it once when the
+  // issue list changes keeps the search reactive even at thousands of rows.
+  const haystacks = React.useMemo(() => {
+    const out = new Array<string>(data.length);
+    for (let i = 0; i < data.length; i++) {
+      const it = data[i];
+      out[i] = (
+        it.key +
+        " " +
+        it.summary +
+        " " +
+        it.effectiveStatus.label +
+        " " +
+        it.rawStatus +
+        " " +
+        (it.assignee?.name ?? "") +
+        " " +
+        (it.reporter?.name ?? "") +
+        " " +
+        it.serverName +
+        " " +
+        (it.note ?? "") +
+        " " +
+        it.labels.join(" ")
+      ).toLowerCase();
+    }
+    return out;
+  }, [data]);
+
   const afterStatusFilter = React.useMemo(() => {
     if (statusFilter.size === 0) return data;
     return data.filter((i) => statusFilter.has(i.effectiveStatus.label));
@@ -373,22 +404,25 @@ export function IssuesTable({
   const filtered = React.useMemo(() => {
     if (!search.trim()) return afterStatusFilter;
     const lower = search.toLowerCase();
-    return afterStatusFilter.filter((i) =>
-      [
-        i.key,
-        i.summary,
-        i.effectiveStatus.label,
-        i.rawStatus,
-        i.assignee?.name,
-        i.reporter?.name,
-        i.serverName,
-        i.note,
-        i.labels.join(" "),
-      ]
-        .filter(Boolean)
-        .some((v) => String(v).toLowerCase().includes(lower)),
-    );
-  }, [afterStatusFilter, search]);
+    // Status filter is rare; when active, we filter by computing the index
+    // into `haystacks` from `data`. When inactive, afterStatusFilter === data
+    // and indices line up trivially.
+    if (afterStatusFilter === data) {
+      const out: typeof data = [];
+      for (let i = 0; i < data.length; i++) {
+        if (haystacks[i].includes(lower)) out.push(data[i]);
+      }
+      return out;
+    }
+    // Status-filtered: build a Set of post-filter identities then walk data
+    const allowed = new Set(afterStatusFilter);
+    const out: typeof data = [];
+    for (let i = 0; i < data.length; i++) {
+      if (!allowed.has(data[i])) continue;
+      if (haystacks[i].includes(lower)) out.push(data[i]);
+    }
+    return out;
+  }, [afterStatusFilter, search, data, haystacks]);
 
   const table = useReactTable({
     data: filtered,

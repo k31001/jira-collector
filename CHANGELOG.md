@@ -10,6 +10,18 @@
 
 ---
 
+## [1.7.1] — 2026-06-01
+
+### Performance
+- **서버 응답 캐시 (15초 TTL)** — `/api/dashboards/[id]/issues`, `/api/resolution-time/[id]/issues` 에 인-프로세스 TTL 캐시 적용 (`lib/server-cache.ts`). 2000 이슈 기준 페이지 리로드/탭 전환/연속 polling이 평균 **748ms → 9ms (~80x)**. `?bypass=1` 쿼리로 강제 새로고침 가능. 첫 cold 로드(prod의 Jira 페이지네이션)에는 영향 없음.
+- **IssuesTable 검색 필터** — 이슈마다 lowercase haystack을 `data` 변경 시 한 번만 빌드. 2000 이슈에서 키 입력당 **3.3ms → 0.24ms (~14x)**.
+- **TrendChart `buildSeries`** — issue마다 호출되던 `new Date(iso).toISOString().slice(0,10)` 제거. window 시작 시점에서의 정수 day index로 버킷팅. 2000 이슈에서 **4.6ms → 1.2ms (~4x)**.
+
+### Changed
+- **mock-jira 시드 카운트** — 개발/스트레스 테스트용으로 PROJ 30→250, BUG 25→100, FEAT 45→150 으로 상향. 총 ~520 이슈.
+
+---
+
 ## [1.7.0] — 2026-06-01
 
 ### Added
@@ -20,6 +32,7 @@
 ### Changed
 - **LongTailTable(오래 걸린 이슈 분석)에 10개 단위 페이지네이션** — 임계값 초과 이슈를 10개씩 분할 표시 (이전/다음 버튼 + `X/N 페이지` 카운터 + `총 N개 중 X–Y개 표시`). 임계값/소스/정렬 변경 시 페이지 자동 리셋. 현재 페이지만 렌더링하여 다수 이슈에서 체감 성능 개선.
 
+[1.7.1]: https://github.com/k31001/jira-collector/releases/tag/v1.7.1
 [1.7.0]: https://github.com/k31001/jira-collector/releases/tag/v1.7.0
 
 ---
