@@ -33,6 +33,17 @@ type Comment = {
   updated: string;
 };
 
+type ChangelogHistory = {
+  id: string;
+  created: string;
+  items: Array<{
+    field: string;
+    fieldtype: string;
+    fromString: string | null;
+    toString: string | null;
+  }>;
+};
+
 type Issue = {
   id: string;
   key: string;
@@ -50,7 +61,58 @@ type Issue = {
     labels: string[];
     comment: { comments: Comment[]; total: number; maxResults: number; startAt: number };
   };
+  changelog?: { startAt: number; maxResults: number; total: number; histories: ChangelogHistory[] };
 };
+
+// Canonical status flow used to synthesize a plausible transition history.
+const STATUS_FLOW = ["To Do", "In Progress", "In Review"];
+
+/**
+ * Build a synthetic status changelog: the issue starts in "To Do" at
+ * creation and walks the canonical flow up to its final status, with
+ * transition timestamps spread evenly between created and the end time
+ * (resolved date when resolved, otherwise last-updated). Issues that never
+ * left "To Do" get an empty history.
+ */
+function buildChangelog(
+  createdIso: string,
+  endIso: string,
+  finalStatus: string,
+): ChangelogHistory[] {
+  const path: string[] = [];
+  for (const s of STATUS_FLOW) {
+    path.push(s);
+    if (s === finalStatus) break;
+  }
+  // If the final status isn't a mid-flow one (Done/Closed/Resolved), append it
+  // after walking the full flow.
+  if (path[path.length - 1] !== finalStatus) {
+    if (!STATUS_FLOW.includes(finalStatus)) path.push(finalStatus);
+  }
+  if (path.length <= 1) return [];
+
+  const createdMs = Date.parse(createdIso);
+  const endMs = Date.parse(endIso);
+  const span = Math.max(0, endMs - createdMs);
+  const steps = path.length - 1;
+  const histories: ChangelogHistory[] = [];
+  for (let i = 1; i < path.length; i++) {
+    const at = new Date(createdMs + (span * i) / steps).toISOString();
+    histories.push({
+      id: String(30000 + i),
+      created: at,
+      items: [
+        {
+          field: "status",
+          fieldtype: "jira",
+          fromString: path[i - 1],
+          toString: path[i],
+        },
+      ],
+    });
+  }
+  return histories;
+}
 
 const STATUS_CATEGORIES: Record<string, { key: string; colorName: string }> = {
   "To Do": { key: "new", colorName: "blue-gray" },
@@ -310,6 +372,14 @@ function makeIssue(input: {
     created: daysAgo(c.daysAgo),
     updated: daysAgo(c.daysAgo),
   }));
+  const createdIso = daysAgo(input.createdDaysAgo);
+  const updatedIso = daysAgo(input.updatedDaysAgo);
+  const resolutiondate = input.resolved ? updatedIso : null;
+  const histories = buildChangelog(
+    createdIso,
+    resolutiondate ?? updatedIso,
+    input.status,
+  );
   return {
     id: nextId(),
     key: input.key,
@@ -319,13 +389,19 @@ function makeIssue(input: {
       status: { name: input.status, statusCategory: cat },
       assignee: input.assignee === null ? null : { displayName: input.assignee ?? "Demo User" },
       reporter: { displayName: input.reporter ?? "Demo User" },
-      created: daysAgo(input.createdDaysAgo),
-      updated: daysAgo(input.updatedDaysAgo),
-      resolutiondate: input.resolved ? daysAgo(input.updatedDaysAgo) : null,
+      created: createdIso,
+      updated: updatedIso,
+      resolutiondate,
       priority: input.priority ? { name: input.priority } : { name: "Medium" },
       issuetype: { name: input.issuetype ?? "Task" },
       labels: input.labels ?? [],
       comment: { comments, total: comments.length, maxResults: comments.length, startAt: 0 },
+    },
+    changelog: {
+      startAt: 0,
+      maxResults: histories.length,
+      total: histories.length,
+      histories,
     },
   };
 }
@@ -566,7 +642,12 @@ function projectFields(issue: Issue, fields: string[] | undefined): Issue {
   if (include.has("issuetype")) filtered.issuetype = f.issuetype;
   if (include.has("labels")) filtered.labels = f.labels;
   if (include.has("comment")) filtered.comment = f.comment;
-  return { ...issue, fields: filtered };
+  // changelog is never part of a `fields` projection — it rides on the
+  // top-level `expand`, so drop it here so search/field-limited responses
+  // stay lean.
+  const { changelog: _drop, ...rest } = issue;
+  void _drop;
+  return { ...rest, fields: filtered };
 }
 
 function filterByJql(issues: Issue[], jql: string): Issue[] {
@@ -749,7 +830,36 @@ function startServer(opts: { port: number; name: string; issues: (baseUrl: strin
       }
       const fieldsParam = url.searchParams.get("fields");
       const fields = fieldsParam ? fieldsParam.split(",") : undefined;
-      jsonResponse(res, 200, projectFields(issue, fields));
+      const expand = (url.searchParams.get("expand") ?? "").split(",");
+      const projected = projectFields(issue, fields);
+      // Re-attach changelog only when the caller asked for it via expand.
+      if (expand.includes("changelog")) {
+        projected.changelog = issue.changelog;
+      }
+      jsonResponse(res, 200, projected);
+      return;
+    }
+    // Dedicated paginated changelog endpoint (Jira Cloud style).
+    const changelogMatch = url.pathname.match(
+      /^\/rest\/api\/2\/issue\/([A-Z][A-Z0-9_]*-\d+)\/changelog$/i,
+    );
+    if (changelogMatch && req.method === "GET") {
+      const issue = issueMap.get(changelogMatch[1].toUpperCase());
+      if (!issue) {
+        jsonResponse(res, 404, {
+          errorMessages: [`Issue ${changelogMatch[1]} not found`],
+          errors: {},
+        });
+        return;
+      }
+      const histories = issue.changelog?.histories ?? [];
+      jsonResponse(res, 200, {
+        startAt: 0,
+        maxResults: histories.length,
+        total: histories.length,
+        isLast: true,
+        values: histories,
+      });
       return;
     }
     const commentMatch = url.pathname.match(

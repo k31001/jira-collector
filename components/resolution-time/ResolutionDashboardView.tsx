@@ -64,6 +64,7 @@ import {
 } from "./IssueListDialog";
 import { LongTailTable } from "./LongTailTable";
 import { AgingWipTable } from "./AgingWipTable";
+import { StatusDwellCard } from "./StatusDwellCard";
 
 type Props = {
   dashboardId: string;
@@ -479,6 +480,10 @@ export function ResolutionDashboardView({
               sourceColor: ps.source.color,
               aging: ps.aging,
             }))}
+          />
+          <StatusDwellCard
+            dashboardId={dashboardId}
+            visibleSourceIds={visiblePerSource.map((ps) => ps.source.sourceId)}
           />
           <LongTailTable
             dashboardId={dashboardId}

@@ -10,6 +10,17 @@
 
 ---
 
+## [1.12.0] — 2026-06-01
+
+### Added
+- **상태별 체류 시간 (Status dwell time) 분석** — Resolution Time 대시보드에 이슈가 각 워크플로 상태(To Do / In Progress / In Review …)에 평균 얼마나 머무는지 보여주는 카드 추가. "리뷰 단계에서 평균 3일" 같은 병목을 짚어 줍니다. Jira 변경 이력(changelog)을 이슈마다 조회해야 해서 cold load를 보호하기 위해 **명시적 실행 버튼(opt-in)** 으로 제공 — 자동 로드되지 않습니다. 집계는 서버에서 수행해 응답이 작고(수백 이슈도 ~2KB), 60초 캐시. 소스당 최대 200개 이슈로 샘플링(초과 시 표시). JQL 카드 토글(visibility) 반영.
+  - `lib/dwell.ts` — `computeDwellIntervals` / `aggregateDwell` 순수 함수 (단위 테스트 5개). created → 전이들 → 종료(해결일 또는 now) 타임라인을 재구성, 해결 이슈의 종료 상태는 자연히 ~0으로 수렴.
+  - `lib/jira/client.ts`에 `getIssueChangelog` — Cloud는 `/issue/{key}/changelog`(페이지네이션), Server/DC는 `?expand=changelog`. status 전이만 추출.
+  - `lib/jira/fetch-dwell.ts` + `GET /api/resolution-time/[id]/dwell` (opt-in, 캐시).
+  - mock-jira에 합성 changelog 생성 + `expand=changelog` / `/changelog` 엔드포인트 추가 (로컬 검증용).
+
+---
+
 ## [1.11.0] — 2026-06-01
 
 ### Added
@@ -103,6 +114,7 @@
 ### Changed
 - **LongTailTable(오래 걸린 이슈 분석)에 10개 단위 페이지네이션** — 임계값 초과 이슈를 10개씩 분할 표시 (이전/다음 버튼 + `X/N 페이지` 카운터 + `총 N개 중 X–Y개 표시`). 임계값/소스/정렬 변경 시 페이지 자동 리셋. 현재 페이지만 렌더링하여 다수 이슈에서 체감 성능 개선.
 
+[1.12.0]: https://github.com/k31001/jira-collector/releases/tag/v1.12.0
 [1.11.0]: https://github.com/k31001/jira-collector/releases/tag/v1.11.0
 [1.10.1]: https://github.com/k31001/jira-collector/releases/tag/v1.10.1
 [1.10.0]: https://github.com/k31001/jira-collector/releases/tag/v1.10.0

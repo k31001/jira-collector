@@ -241,6 +241,98 @@ export async function getLatestComment(
   };
 }
 
+/**
+ * Fetch the status-transition history for a single issue.
+ *
+ * Cloud exposes a dedicated paginated `/issue/{key}/changelog` endpoint
+ * (returns `values`); Server/DC returns the full history inline via
+ * `?expand=changelog` (`changelog.histories`). Either way we keep only the
+ * `status` field items and return them as `{ at, from, to }` transitions
+ * sorted by time.
+ */
+export type RawChangelogHistory = {
+  created?: string;
+  items?: Array<{
+    field?: string;
+    fromString?: string | null;
+    toString?: string | null;
+  }>;
+};
+
+export type StatusChange = {
+  at: number;
+  from: string | null;
+  to: string | null;
+};
+
+function historiesToStatusChanges(
+  histories: RawChangelogHistory[],
+): StatusChange[] {
+  const out: StatusChange[] = [];
+  for (const h of histories) {
+    const at = h.created ? Date.parse(h.created) : NaN;
+    if (!Number.isFinite(at)) continue;
+    for (const item of h.items ?? []) {
+      if (item.field !== "status") continue;
+      out.push({
+        at,
+        from: item.fromString ?? null,
+        to: item.toString ?? null,
+      });
+    }
+  }
+  out.sort((a, b) => a.at - b.at);
+  return out;
+}
+
+export async function getIssueChangelog(
+  server: JiraServerConfig,
+  issueKey: string,
+): Promise<StatusChange[]> {
+  if (isCloudHost(server.baseUrl)) {
+    const histories: RawChangelogHistory[] = [];
+    let startAt = 0;
+    // Cloud paginates; walk until isLast. Cap at 10 pages (1000 entries) to
+    // bound a pathological issue.
+    for (let page = 0; page < 10; page++) {
+      const params = new URLSearchParams({
+        startAt: String(startAt),
+        maxResults: "100",
+      });
+      const res = await jiraFetch(
+        server,
+        `/rest/api/3/issue/${encodeURIComponent(issueKey)}/changelog?${params}`,
+        { method: "GET" },
+      );
+      const data = (await res.json()) as {
+        values?: RawChangelogHistory[];
+        isLast?: boolean;
+        total?: number;
+      };
+      const values = data.values ?? [];
+      histories.push(...values);
+      if (data.isLast || values.length === 0) break;
+      startAt += values.length;
+    }
+    return historiesToStatusChanges(histories);
+  }
+
+  // Server/DC: inline expand.
+  const params = new URLSearchParams({
+    fields: "status",
+    expand: "changelog",
+  });
+  const res = await jiraFetch(
+    server,
+    `/rest/api/2/issue/${encodeURIComponent(issueKey)}?${params}`,
+    { method: "GET" },
+  );
+  const data = (await res.json()) as {
+    changelog?: { histories?: RawChangelogHistory[] };
+  };
+  return historiesToStatusChanges(data.changelog?.histories ?? []);
+}
+
 export async function getMyself(server: JiraServerConfig) {
   const apiPath = isCloudHost(server.baseUrl)
     ? "/rest/api/3/myself"
