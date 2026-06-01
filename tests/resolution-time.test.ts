@@ -18,6 +18,7 @@ import {
   withAging,
   withResolutionHours,
   flattenAgingWithSource,
+  partitionResolvedByPeriod,
   type ResolvedIssue,
 } from "@/lib/resolution-time";
 import type { NormalizedIssue } from "@/lib/jira/types";
@@ -161,6 +162,31 @@ test("flattenAgingWithSource tags each issue with its source", () => {
   assert.equal(flat.length, 1);
   assert.equal(flat[0].sourceLabel, "JQL 1");
   assert.equal(flat[0].key, "A");
+});
+
+/* --------------------------- period comparison --------------------------- */
+
+test("partitionResolvedByPeriod splits current vs previous window", () => {
+  const now = Date.parse("2026-05-31T00:00:00Z");
+  const mk = (key: string, resolvedIso: string): ResolvedIssue => ({
+    ...makeIssue({ key, resolved: resolvedIso }),
+    resolutionHours: 10,
+  });
+  const issues = [
+    mk("CUR1", "2026-05-30T00:00:00Z"), // 1 day ago → current (window 7d)
+    mk("CUR2", "2026-05-26T00:00:00Z"), // 5 days ago → current
+    mk("PREV1", "2026-05-22T00:00:00Z"), // 9 days ago → previous (7–14d)
+    mk("OLD", "2026-05-10T00:00:00Z"), // 21 days ago → dropped
+  ];
+  const { current, previous } = partitionResolvedByPeriod(issues, 7, now);
+  assert.deepEqual(
+    current.map((i) => i.key).sort(),
+    ["CUR1", "CUR2"],
+  );
+  assert.deepEqual(
+    previous.map((i) => i.key),
+    ["PREV1"],
+  );
 });
 
 /* ----------------------------- histogram --------------------------------- */

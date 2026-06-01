@@ -10,6 +10,14 @@
 
 ---
 
+## [1.14.0] — 2026-06-01
+
+### Added
+- **기간 비교 카드** — Resolution Time 대시보드에 "최근 N일 vs 직전 N일" 비교 추가. 소스별로 처리량(완료 수), 평균·중앙값·P90 해결 시간을 현재 기간과 직전 동일 길이 기간으로 나눠 델타를 보여줍니다(개선=초록 ▼, 악화=빨강 ▲). 회고에서 "지난 스프린트보다 빨라졌나/느려졌나"를 바로 확인. 직전 기간에 데이터가 없으면 모든 지표가 일관되게 "직전 데이터 없음"으로 표시. 추가 fetch 없음.
+- `lib/resolution-time.ts`에 `partitionResolvedByPeriod` 추가 (단위 테스트 1개).
+
+---
+
 ## [1.13.0] — 2026-06-01
 
 ### Added
@@ -121,6 +129,7 @@
 ### Changed
 - **LongTailTable(오래 걸린 이슈 분석)에 10개 단위 페이지네이션** — 임계값 초과 이슈를 10개씩 분할 표시 (이전/다음 버튼 + `X/N 페이지` 카운터 + `총 N개 중 X–Y개 표시`). 임계값/소스/정렬 변경 시 페이지 자동 리셋. 현재 페이지만 렌더링하여 다수 이슈에서 체감 성능 개선.
 
+[1.14.0]: https://github.com/k31001/jira-collector/releases/tag/v1.14.0
 [1.13.0]: https://github.com/k31001/jira-collector/releases/tag/v1.13.0
 [1.12.0]: https://github.com/k31001/jira-collector/releases/tag/v1.12.0
 [1.11.0]: https://github.com/k31001/jira-collector/releases/tag/v1.11.0

@@ -542,6 +542,37 @@ export function statsForSource(resolved: ResolvedIssue[], total: number): Source
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Period comparison                                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Split resolved issues into the current window `[now - windowDays, now]` and
+ * the immediately preceding window of the same length
+ * `[now - 2·windowDays, now - windowDays)`. Issues resolved before both
+ * windows are dropped. Lets the dashboard compare "this period vs last
+ * period" for retro-style decisions.
+ */
+export function partitionResolvedByPeriod(
+  resolved: ResolvedIssue[],
+  windowDays: number,
+  now: number = Date.now(),
+): { current: ResolvedIssue[]; previous: ResolvedIssue[] } {
+  const windowMs = windowDays * MS_PER_DAY;
+  const curFrom = now - windowMs;
+  const prevFrom = now - 2 * windowMs;
+  const current: ResolvedIssue[] = [];
+  const previous: ResolvedIssue[] = [];
+  for (const r of resolved) {
+    if (!r.resolved) continue;
+    const t = Date.parse(r.resolved);
+    if (!Number.isFinite(t)) continue;
+    if (t >= curFrom && t <= now) current.push(r);
+    else if (t >= prevFrom && t < curFrom) previous.push(r);
+  }
+  return { current, previous };
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Long-tail (slow issue) analysis                                            */
 /* -------------------------------------------------------------------------- */
 

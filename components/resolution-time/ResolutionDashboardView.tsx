@@ -66,6 +66,7 @@ import {
 import { LongTailTable } from "./LongTailTable";
 import { AgingWipTable } from "./AgingWipTable";
 import { StatusDwellCard } from "./StatusDwellCard";
+import { PeriodComparisonCard } from "./PeriodComparisonCard";
 
 type Props = {
   dashboardId: string;
@@ -457,6 +458,16 @@ export function ResolutionDashboardView({
               onExpandedChange={setFiltersExpanded}
             />
           )}
+
+          <PeriodComparisonCard
+            windowDays={windowDays}
+            perSource={visiblePerSource.map((ps) => ({
+              sourceId: ps.source.sourceId,
+              label: ps.source.label,
+              color: ps.source.color,
+              resolved: ps.resolved,
+            }))}
+          />
 
           <TimeSeriesChart
             series={series}
