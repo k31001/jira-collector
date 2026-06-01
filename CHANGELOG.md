@@ -10,6 +10,13 @@
 
 ---
 
+## [1.13.0] — 2026-06-01
+
+### Added
+- **처리량 vs 해결 시간 산점도** — Resolution Time 대시보드에 각 기간(주/월 등)을 점 하나로 찍는 scatter 추가. X축 = 그 기간에 완료된 이슈 수(처리량), Y축 = 그 이슈들의 평균 해결 시간(cycle time). 오른쪽 아래(처리량 높고 해결 시간 낮음)가 건강한 방향이며, 점이 위로 흩어지면 속도가 느려지는 신호입니다. 기존 시계열 데이터(`Series.points`의 count/avgHours)를 재사용해 추가 fetch 없음. JQL 카드 토글(visibility) 반영.
+
+---
+
 ## [1.12.0] — 2026-06-01
 
 ### Added
@@ -114,6 +121,7 @@
 ### Changed
 - **LongTailTable(오래 걸린 이슈 분석)에 10개 단위 페이지네이션** — 임계값 초과 이슈를 10개씩 분할 표시 (이전/다음 버튼 + `X/N 페이지` 카운터 + `총 N개 중 X–Y개 표시`). 임계값/소스/정렬 변경 시 페이지 자동 리셋. 현재 페이지만 렌더링하여 다수 이슈에서 체감 성능 개선.
 
+[1.13.0]: https://github.com/k31001/jira-collector/releases/tag/v1.13.0
 [1.12.0]: https://github.com/k31001/jira-collector/releases/tag/v1.12.0
 [1.11.0]: https://github.com/k31001/jira-collector/releases/tag/v1.11.0
 [1.10.1]: https://github.com/k31001/jira-collector/releases/tag/v1.10.1

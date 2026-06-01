@@ -54,6 +54,7 @@ import {
   type Series,
 } from "./TimeSeriesChart";
 import { UnresolvedTrendChart } from "./UnresolvedTrendChart";
+import { ThroughputScatterChart } from "./ThroughputScatterChart";
 import {
   HistogramChart,
   type SourceHistogram,
@@ -464,6 +465,11 @@ export function ResolutionDashboardView({
             visible={visibleJqls}
           />
           <UnresolvedTrendChart
+            series={series}
+            bucket={timeBucket}
+            visible={visibleJqls}
+          />
+          <ThroughputScatterChart
             series={series}
             bucket={timeBucket}
             visible={visibleJqls}
