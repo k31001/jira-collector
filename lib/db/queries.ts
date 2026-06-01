@@ -11,6 +11,7 @@ import {
   statusColors,
   customFacets,
   customFacetValues,
+  ratioConfigs,
 } from "./schema";
 import { decrypt } from "@/lib/crypto";
 import type { JiraServerConfig } from "@/lib/jira/types";
@@ -148,6 +149,35 @@ export function listCustomFacetsWithValues(): CustomFacetWithValues[] {
       displayOrder: v.displayOrder,
     })),
   }));
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Ratio analysis configs (global)                                            */
+/* -------------------------------------------------------------------------- */
+
+export type RatioConfigDef = {
+  id: string;
+  name: string;
+  numeratorJql: string;
+  denominatorJql: string;
+  basis: "created" | "resolved";
+  displayOrder: number;
+};
+
+export function listRatioConfigs(): RatioConfigDef[] {
+  return db
+    .select()
+    .from(ratioConfigs)
+    .orderBy(asc(ratioConfigs.displayOrder), asc(ratioConfigs.createdAt))
+    .all()
+    .map((r) => ({
+      id: r.id,
+      name: r.name,
+      numeratorJql: r.numeratorJql,
+      denominatorJql: r.denominatorJql,
+      basis: r.basis === "resolved" ? "resolved" : "created",
+      displayOrder: r.displayOrder,
+    }));
 }
 
 export async function getStatusContext() {

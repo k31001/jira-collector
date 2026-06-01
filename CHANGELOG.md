@@ -12,6 +12,17 @@
 
 ---
 
+## [1.17.0] — 2026-06-01
+
+### Added
+- **비율 분석 (분자/분모 JQL 설정)** — 기존 "버그 유입 비율" 차트를 일반화. 설정 → **비율 분석**에서 분자·분모를 제한 JQL로 정의해 "전체 중 특정 조건의 비중" 추세를 그립니다. 예: 분자 `issuetype = Bug`, 분모 비움(전체) → 버그 유입 비율. 분모를 `issuetype in (Bug, Story, Task)`처럼 좁히거나, 기준 날짜를 생성일(유입)/해결일(완료)로 선택 가능. 여러 비율을 정의하면 각각 카드로 노출.
+  - 새 테이블 `ratio_configs` (마이그레이션 `0004`, 기본 "버그 유입 비율" 시드 포함).
+  - `actions/ratio-analysis.ts` CRUD + JQL 파싱 검증, `/settings/ratio-analysis` 페이지(라이브 검증), 사이드바·설정 허브 항목.
+  - `lib/resolution-time.ts`에 `buildRatioSeries`(numerator/denominator 술어 + created/resolved 기준) 추가, `buildBugRateSeries`는 이 위의 얇은 래퍼로 유지. 단위 테스트 1개 추가.
+- **그래프 제목 변경** — "버그 유입 비율" → **"비율 분석"**, 제목 옆에 어떤 비율인지(설정 이름 칩 + `분자 … / 분모 … · 생성일|해결일 기준`)를 표시. 도움말도 해당 비율 정의를 반영.
+
+---
+
 ## [1.16.0] — 2026-06-01
 
 ### Added
@@ -147,6 +158,7 @@
 ### Changed
 - **LongTailTable(오래 걸린 이슈 분석)에 10개 단위 페이지네이션** — 임계값 초과 이슈를 10개씩 분할 표시 (이전/다음 버튼 + `X/N 페이지` 카운터 + `총 N개 중 X–Y개 표시`). 임계값/소스/정렬 변경 시 페이지 자동 리셋. 현재 페이지만 렌더링하여 다수 이슈에서 체감 성능 개선.
 
+[1.17.0]: https://github.com/k31001/jira-collector/releases/tag/v1.17.0
 [1.16.0]: https://github.com/k31001/jira-collector/releases/tag/v1.16.0
 [1.15.0]: https://github.com/k31001/jira-collector/releases/tag/v1.15.0
 [1.14.0]: https://github.com/k31001/jira-collector/releases/tag/v1.14.0

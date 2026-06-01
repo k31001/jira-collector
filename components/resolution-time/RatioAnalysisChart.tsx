@@ -14,7 +14,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HelpHint, HelpRow } from "@/components/help-hint";
 import {
-  buildBugRateSeries,
+  buildRatioSeries,
+  type RatioBasis,
   type TimeBucket,
 } from "@/lib/resolution-time";
 import type { NormalizedIssue } from "@/lib/jira/types";
@@ -26,17 +27,30 @@ type SourceBlock = {
   issues: NormalizedIssue[];
 };
 
+export type CompiledRatioConfig = {
+  id: string;
+  name: string;
+  /** Raw JQL strings for display. */
+  numeratorJql: string;
+  denominatorJql: string;
+  basis: RatioBasis;
+  numerator: (issue: NormalizedIssue) => boolean;
+  denominator: ((issue: NormalizedIssue) => boolean) | null;
+};
+
 /**
- * Incoming bug-rate trend: per time bucket, the share of newly-created issues
- * that are bugs/defects. A rising line means a growing fraction of incoming
- * work is defects — a quality signal that complements raw cycle time.
+ * Configurable ratio trend: per bucket, the share of denominator-matching
+ * issues that also match the numerator. The specific ratio (numerator /
+ * denominator and the date basis) is user-defined in 설정 → 비율 분석.
  */
-export function BugRateChart({
+export function RatioAnalysisChart({
+  config,
   perSource,
   windowDays,
   bucket,
   visible,
 }: {
+  config: CompiledRatioConfig;
   perSource: SourceBlock[];
   windowDays: number;
   bucket: TimeBucket;
@@ -51,23 +65,28 @@ export function BugRateChart({
           ? "월별"
           : "분기별";
 
+  const denomLabel = config.denominatorJql.trim() || "전체";
+  const basisLabel = config.basis === "resolved" ? "해결일" : "생성일";
+
   const perSourceSeries = React.useMemo(
     () =>
       perSource.map((s) => ({
         sourceId: s.sourceId,
         label: s.label,
         color: s.color,
-        points: buildBugRateSeries(s.issues, windowDays, bucket),
+        points: buildRatioSeries(s.issues, windowDays, bucket, {
+          numerator: config.numerator,
+          denominator: config.denominator,
+          basis: config.basis,
+        }),
       })),
-    [perSource, windowDays, bucket],
+    [perSource, windowDays, bucket, config],
   );
 
   const data = React.useMemo(() => {
     if (perSourceSeries.length === 0) return [];
     const allDates = new Set<string>();
-    for (const s of perSourceSeries) {
-      for (const p of s.points) allDates.add(p.date);
-    }
+    for (const s of perSourceSeries) for (const p of s.points) allDates.add(p.date);
     const sorted = [...allDates].sort();
     return sorted.map((date) => {
       const labelOf = perSourceSeries
@@ -79,11 +98,13 @@ export function BugRateChart({
       };
       for (const s of perSourceSeries) {
         const pt = s.points.find((p) => p.date === date);
-        // Skip buckets with no created issues so the line doesn't dip to a
-        // misleading 0%.
         row[s.sourceId] =
-          pt && pt.total > 0 ? Math.round(pt.ratio * 1000) / 10 : null;
-        row[`${s.sourceId}__meta`] = pt ? `${pt.bugs}/${pt.total}` : "";
+          pt && pt.denominator > 0
+            ? Math.round(pt.ratio * 1000) / 10
+            : null;
+        row[`${s.sourceId}__meta`] = pt
+          ? `${pt.numerator}/${pt.denominator}`
+          : "";
       }
       return row;
     });
@@ -91,30 +112,33 @@ export function BugRateChart({
 
   const isVisible = (id: string) => visible[id] !== false;
   const hasAny = perSourceSeries.some(
-    (s) => isVisible(s.sourceId) && s.points.some((p) => p.total > 0),
+    (s) => isVisible(s.sourceId) && s.points.some((p) => p.denominator > 0),
   );
 
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
-          버그 유입 비율 ({bucketLabel})
-          <HelpHint title="버그 유입 비율">
+          비율 분석 ({bucketLabel})
+          <span className="rounded bg-muted px-1.5 py-0.5 text-xs font-normal">
+            {config.name}
+          </span>
+          <HelpHint title={`비율 분석 · ${config.name}`}>
             <HelpRow label="값:">
-              그 기간에 생성된 이슈 중 버그/결함이 차지하는 비중(%)입니다.
-              생성일 기준이라 &ldquo;들어오는 일&rdquo;의 품질을 봅니다.
+              분모에 해당하는 이슈 중 분자 조건도 만족하는 비율(%)입니다.
             </HelpRow>
-            <HelpRow label="선이 오를수록:">
-              유입 작업 중 결함 비율이 커지는 중 = 품질 악화 또는 불 끄기가
-              늘고 있다는 신호.
+            <HelpRow label="이 비율:">
+              분자 <code className="text-[11px]">{config.numeratorJql}</code> /
+              분모 <code className="text-[11px]">{denomLabel}</code> ·{" "}
+              {basisLabel} 기준.
             </HelpRow>
-            <HelpRow label="해석 팁:">
-              해결 시간이 좋아도 이 비율이 높으면 신규 가치보다 수습에 시간을
-              쓰는 중일 수 있습니다.
+            <HelpRow label="해석:">
+              선이 오르면 분모 중 분자 조건의 비중이 커지는 중입니다. 어떤 비율을
+              볼지는 설정 → 비율 분석에서 바꿀 수 있습니다.
             </HelpRow>
           </HelpHint>
           <span className="text-xs font-normal text-muted-foreground">
-            생성된 이슈 중 버그/결함 비중
+            분자 {config.numeratorJql} / 분모 {denomLabel} · {basisLabel} 기준
           </span>
         </CardTitle>
       </CardHeader>

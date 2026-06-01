@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Server, Tag, Palette, Sliders } from "lucide-react";
+import { Server, Tag, Palette, Sliders, Percent } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
@@ -28,6 +28,13 @@ const items = [
     description:
       "라벨 조합 같은 커스텀 분류를 직접 정의해 Resolution Time 대시보드 필터로 사용합니다.",
     icon: Sliders,
+  },
+  {
+    href: "/settings/ratio-analysis",
+    title: "비율 분석",
+    description:
+      "분자/분모를 JQL로 정의해 '전체 중 특정 조건의 비중' 추세를 봅니다(예: 버그 유입 비율).",
+    icon: Percent,
   },
 ];
 

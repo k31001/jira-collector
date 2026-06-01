@@ -160,6 +160,20 @@ export const customFacetValues = sqliteTable(
   }),
 );
 
+export const ratioConfigs = sqliteTable("ratio_configs", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  /** Restricted-JQL predicate for the numerator (the "of interest" subset). */
+  numeratorJql: text("numerator_jql").notNull(),
+  /** Predicate for the denominator; empty string means "all issues". */
+  denominatorJql: text("denominator_jql").notNull().default(""),
+  /** Which date to bucket by: 'created' (incoming) or 'resolved' (outgoing). */
+  basis: text("basis").notNull().default("created"),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at").notNull().default(sql`(unixepoch())`),
+});
+
 export type JiraServer = typeof jiraServers.$inferSelect;
 export type NewJiraServer = typeof jiraServers.$inferInsert;
 export type Dashboard = typeof dashboards.$inferSelect;
@@ -179,3 +193,5 @@ export type CustomFacet = typeof customFacets.$inferSelect;
 export type NewCustomFacet = typeof customFacets.$inferInsert;
 export type CustomFacetValue = typeof customFacetValues.$inferSelect;
 export type NewCustomFacetValue = typeof customFacetValues.$inferInsert;
+export type RatioConfig = typeof ratioConfigs.$inferSelect;
+export type NewRatioConfig = typeof ratioConfigs.$inferInsert;

@@ -40,7 +40,7 @@ import {
   type TimeBucket,
 } from "@/lib/resolution-time";
 import { tryCompileJql } from "@/lib/jql-eval";
-import type { CustomFacetWithValues } from "@/lib/db/queries";
+import type { CustomFacetWithValues, RatioConfigDef } from "@/lib/db/queries";
 import type {
   ResolutionDashboardIssuesResult,
   ResolutionSourceResult,
@@ -55,7 +55,10 @@ import {
 } from "./TimeSeriesChart";
 import { UnresolvedTrendChart } from "./UnresolvedTrendChart";
 import { ThroughputScatterChart } from "./ThroughputScatterChart";
-import { BugRateChart } from "./BugRateChart";
+import {
+  RatioAnalysisChart,
+  type CompiledRatioConfig,
+} from "./RatioAnalysisChart";
 import {
   HistogramChart,
   type SourceHistogram,
@@ -76,6 +79,7 @@ type Props = {
   initialTimeBucket: TimeBucket;
   initialHistogramBucketHours: number;
   customFacets: CustomFacetWithValues[];
+  ratioConfigs: RatioConfigDef[];
 };
 
 const WINDOW_OPTIONS = [
@@ -152,7 +156,30 @@ export function ResolutionDashboardView({
   initialTimeBucket,
   initialHistogramBucketHours,
   customFacets: rawCustomFacets,
+  ratioConfigs,
 }: Props) {
+  // Compile each ratio config's JQL once. A failed numerator matches nothing
+  // (ratio 0); an empty denominator means "all issues"; a present-but-invalid
+  // denominator falls back to "all" — though the settings form validates JQL
+  // on save, so that's a defensive fallback.
+  const compiledRatios = React.useMemo<CompiledRatioConfig[]>(
+    () =>
+      ratioConfigs.map((c) => {
+        const num = tryCompileJql(c.numeratorJql);
+        const denTrim = c.denominatorJql.trim();
+        const den = denTrim ? tryCompileJql(denTrim) : null;
+        return {
+          id: c.id,
+          name: c.name,
+          numeratorJql: c.numeratorJql,
+          denominatorJql: c.denominatorJql,
+          basis: c.basis,
+          numerator: num ?? (() => false),
+          denominator: denTrim ? den : null,
+        };
+      }),
+    [ratioConfigs],
+  );
   // Compile each value's JQL once per facet config so we don't reparse on
   // every render / keystroke. Invalid stored expressions resolve to null and
   // are skipped at filter time.
@@ -486,17 +513,21 @@ export function ResolutionDashboardView({
             bucket={timeBucket}
             visible={visibleJqls}
           />
-          <BugRateChart
-            perSource={visiblePerSource.map((ps) => ({
-              sourceId: ps.source.sourceId,
-              label: ps.source.label,
-              color: ps.source.color,
-              issues: ps.filteredIssues,
-            }))}
-            windowDays={windowDays}
-            bucket={timeBucket}
-            visible={visibleJqls}
-          />
+          {compiledRatios.map((rc) => (
+            <RatioAnalysisChart
+              key={rc.id}
+              config={rc}
+              perSource={visiblePerSource.map((ps) => ({
+                sourceId: ps.source.sourceId,
+                label: ps.source.label,
+                color: ps.source.color,
+                issues: ps.filteredIssues,
+              }))}
+              windowDays={windowDays}
+              bucket={timeBucket}
+              visible={visibleJqls}
+            />
+          ))}
           <HistogramChart
             histograms={histograms}
             onBinSelected={onBinSelected}

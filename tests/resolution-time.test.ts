@@ -20,6 +20,7 @@ import {
   flattenAgingWithSource,
   partitionResolvedByPeriod,
   buildBugRateSeries,
+  buildRatioSeries,
   isBugType,
   type ResolvedIssue,
 } from "@/lib/resolution-time";
@@ -215,6 +216,43 @@ test("buildBugRateSeries computes per-bucket bug ratio by created date", () => {
   assert.equal(day30!.total, 3);
   assert.equal(day30!.bugs, 1);
   assert.ok(Math.abs(day30!.ratio - 1 / 3) < 1e-9);
+});
+
+test("buildRatioSeries honors numerator/denominator predicates and basis", () => {
+  const now = new Date("2026-05-31T00:00:00Z");
+  const issues: NormalizedIssue[] = [
+    // resolved on 05-30: high priority bug
+    makeIssue({
+      key: "A",
+      issueType: "Bug",
+      priority: "High",
+      resolved: "2026-05-30T00:00:00Z",
+    }),
+    // resolved on 05-30: low priority bug (in denominator "bugs", not numerator "high")
+    makeIssue({
+      key: "B",
+      issueType: "Bug",
+      priority: "Low",
+      resolved: "2026-05-30T00:00:00Z",
+    }),
+    // resolved on 05-30: a story → excluded by denominator (issuetype=Bug)
+    makeIssue({
+      key: "C",
+      issueType: "Story",
+      priority: "High",
+      resolved: "2026-05-30T00:00:00Z",
+    }),
+  ];
+  const series = buildRatioSeries(issues, 7, "day", {
+    numerator: (i) => i.priority === "High",
+    denominator: (i) => i.issueType === "Bug",
+    basis: "resolved",
+    now,
+  });
+  const day = series.find((p) => p.date === "2026-05-30")!;
+  assert.equal(day.denominator, 2); // two bugs
+  assert.equal(day.numerator, 1); // one of them high priority
+  assert.equal(day.ratio, 0.5);
 });
 
 /* ----------------------------- histogram --------------------------------- */

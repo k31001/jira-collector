@@ -10,6 +10,7 @@ import {
   Settings,
   Server,
   Palette,
+  Percent,
   Sliders,
   Tag,
   PlusCircle,
@@ -200,6 +201,12 @@ export function Sidebar({
               active={pathname.startsWith("/settings/smart-filters")}
               icon={<Sliders className="h-4 w-4" />}
               label="스마트 필터"
+            />
+            <SidebarLink
+              href="/settings/ratio-analysis"
+              active={pathname.startsWith("/settings/ratio-analysis")}
+              icon={<Percent className="h-4 w-4" />}
+              label="비율 분석"
             />
           </ul>
         </div>

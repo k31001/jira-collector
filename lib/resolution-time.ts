@@ -366,6 +366,9 @@ export function isBugType(issueType: string | undefined | null): boolean {
  * Per-bucket share of newly-created issues that are bugs. Bucketed by the
  * `created` date (incoming bug rate) — a rising line means a growing fraction
  * of incoming work is defects, a quality signal worth watching.
+ *
+ * Kept as a thin wrapper over the general `buildRatioSeries` for the built-in
+ * bug-rate behaviour and its unit tests.
  */
 export function buildBugRateSeries(
   issues: NormalizedIssue[],
@@ -373,12 +376,66 @@ export function buildBugRateSeries(
   bucket: TimeBucket,
   now: Date = new Date(),
 ): BugRatePoint[] {
+  return buildRatioSeries(issues, windowDays, bucket, {
+    numerator: (i) => isBugType(i.issueType),
+    denominator: null,
+    basis: "created",
+    now,
+  }).map((p) => ({
+    date: p.date,
+    label: p.label,
+    total: p.denominator,
+    bugs: p.numerator,
+    ratio: p.ratio,
+  }));
+}
+
+export type RatioBasis = "created" | "resolved";
+
+export type RatioPoint = {
+  /** ISO date for the bucket start (yyyy-mm-dd) */
+  date: string;
+  label: string;
+  /** Issues in the denominator set that fell in this bucket. */
+  denominator: number;
+  /** Of those, how many also match the numerator predicate. */
+  numerator: number;
+  /** numerator / denominator in 0..1; 0 when denominator is 0. */
+  ratio: number;
+};
+
+export type RatioOptions = {
+  /** Predicate selecting the "of interest" subset (numerator). */
+  numerator: (issue: NormalizedIssue) => boolean;
+  /**
+   * Predicate selecting the base set (denominator). `null` means "all issues
+   * with a valid date for the chosen basis".
+   */
+  denominator: ((issue: NormalizedIssue) => boolean) | null;
+  /** Bucket by created date (incoming) or resolved date (outgoing). */
+  basis: RatioBasis;
+  now?: Date;
+};
+
+/**
+ * General ratio time-series: per bucket, the share of denominator-matching
+ * issues that also match the numerator. Bucketed by created or resolved date.
+ * Powers the configurable "비율 분석" cards (e.g. numerator `issuetype = Bug`,
+ * denominator = all → bug intake rate).
+ */
+export function buildRatioSeries(
+  issues: NormalizedIssue[],
+  windowDays: number,
+  bucket: TimeBucket,
+  options: RatioOptions,
+): RatioPoint[] {
+  const now = options.now ?? new Date();
   const end = bucketStart(now, bucket);
   const startBoundary = new Date(end);
   startBoundary.setDate(startBoundary.getDate() - windowDays + 1);
   const start = bucketStart(startBoundary, bucket);
 
-  const buckets: BugRatePoint[] = [];
+  const buckets: RatioPoint[] = [];
   const indexByKey = new Map<string, number>();
   let cursor = new Date(start);
   while (cursor <= end) {
@@ -386,26 +443,27 @@ export function buildBugRateSeries(
     buckets.push({
       date: isoDate(cursor),
       label: bucketLabel(cursor, bucket),
-      total: 0,
-      bugs: 0,
+      denominator: 0,
+      numerator: 0,
       ratio: 0,
     });
     cursor = advance(cursor, bucket);
   }
 
   for (const issue of issues) {
-    if (!issue.created) continue;
-    const c = new Date(issue.created);
-    if (Number.isNaN(c.getTime())) continue;
-    const key = isoDate(bucketStart(c, bucket));
-    const idx = indexByKey.get(key);
+    const dateStr = options.basis === "resolved" ? issue.resolved : issue.created;
+    if (!dateStr) continue;
+    const d = new Date(dateStr);
+    if (Number.isNaN(d.getTime())) continue;
+    if (options.denominator && !options.denominator(issue)) continue;
+    const idx = indexByKey.get(isoDate(bucketStart(d, bucket)));
     if (idx === undefined) continue;
-    buckets[idx].total += 1;
-    if (isBugType(issue.issueType)) buckets[idx].bugs += 1;
+    buckets[idx].denominator += 1;
+    if (options.numerator(issue)) buckets[idx].numerator += 1;
   }
 
   for (const b of buckets) {
-    b.ratio = b.total > 0 ? b.bugs / b.total : 0;
+    b.ratio = b.denominator > 0 ? b.numerator / b.denominator : 0;
   }
   return buckets;
 }
