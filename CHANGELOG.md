@@ -12,6 +12,22 @@
 
 ---
 
+## [1.19.0] — 2026-06-02
+
+### Added
+- **JQL에서 커스텀 필드 사용** — 스마트 필터·비율 분석의 제한 JQL이 Jira 커스텀 필드를 지원합니다.
+  - 참조: `cf[10016]` 또는 `customfield_10016`.
+  - 텍스트/선택형: `= != in "not in" "is [not] empty"` (필드의 value/displayName/name, 다중값은 원소 단위로 매칭).
+  - 숫자형: `> >= < <=` (예: `cf[10016] >= 5` — Story Points 5 이상).
+  - 날짜형 커스텀 필드: `> >= < <=` 상대/절대 날짜.
+  - 조합 예: `issuetype = Bug AND cf[10016] >= 5`.
+  - 커스텀 필드 값을 쓰려면 fetch 시 가져와야 하므로 Resolution Time 대시보드의 이슈 조회를 **모든 필드(`*all`)** 로 변경 — 응답이 다소 커지지만(커스텀 필드 포함) 15초 캐시로 반복 비용은 흡수.
+  - `NormalizedIssue.customFields`에 `customfield_*` 값 캐리, `lib/jira/normalize.ts`에서 수집.
+  - 설정(스마트 필터·비율 분석) 폼 안내에 커스텀 필드 문법 추가. 단위 테스트 6개 추가(총 89개).
+  - mock-jira: 합성 커스텀 필드(`customfield_10016` Story Points, `customfield_10050` 운영체제 select) + `*all`/`*navigable` 프로젝션 지원.
+
+---
+
 ## [1.18.0] — 2026-06-02
 
 ### Added
@@ -171,6 +187,7 @@
 ### Changed
 - **LongTailTable(오래 걸린 이슈 분석)에 10개 단위 페이지네이션** — 임계값 초과 이슈를 10개씩 분할 표시 (이전/다음 버튼 + `X/N 페이지` 카운터 + `총 N개 중 X–Y개 표시`). 임계값/소스/정렬 변경 시 페이지 자동 리셋. 현재 페이지만 렌더링하여 다수 이슈에서 체감 성능 개선.
 
+[1.19.0]: https://github.com/k31001/jira-collector/releases/tag/v1.19.0
 [1.18.0]: https://github.com/k31001/jira-collector/releases/tag/v1.18.0
 [1.17.0]: https://github.com/k31001/jira-collector/releases/tag/v1.17.0
 [1.16.0]: https://github.com/k31001/jira-collector/releases/tag/v1.16.0

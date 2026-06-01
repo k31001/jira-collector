@@ -186,3 +186,77 @@ test("relational operators rejected on text fields", () => {
   assert.throws(() => parseJql("priority > High"), JqlParseError);
   assert.equal(tryCompileJql("status < Done"), null);
 });
+
+/* ----------------------------- custom fields ----------------------------- */
+
+test("custom field numeric comparison via cf[id]", () => {
+  const fn = compileJql("cf[10016] >= 5");
+  assert.equal(fn(issue({ customFields: { customfield_10016: 8 } })), true);
+  assert.equal(fn(issue({ customFields: { customfield_10016: 3 } })), false);
+  // also accepts the customfield_NNNNN form
+  assert.equal(
+    compileJql("customfield_10016 > 5")(
+      issue({ customFields: { customfield_10016: 8 } }),
+    ),
+    true,
+  );
+});
+
+test("custom field select value equality", () => {
+  const fn = compileJql('cf[10050] = "Windows"');
+  assert.equal(
+    fn(issue({ customFields: { customfield_10050: { value: "Windows" } } })),
+    true,
+  );
+  assert.equal(
+    fn(issue({ customFields: { customfield_10050: { value: "Linux" } } })),
+    false,
+  );
+});
+
+test("custom field multi-value IN matches any element", () => {
+  const fn = compileJql("cf[10070] in (a, b)");
+  assert.equal(
+    fn(issue({ customFields: { customfield_10070: [{ value: "b" }, { value: "z" }] } })),
+    true,
+  );
+  assert.equal(
+    fn(issue({ customFields: { customfield_10070: [{ value: "x" }] } })),
+    false,
+  );
+});
+
+test("custom field is empty / is not empty", () => {
+  const empty = compileJql("cf[10016] is empty");
+  const notEmpty = compileJql("cf[10016] is not empty");
+  assert.equal(empty(issue({ customFields: {} })), true);
+  assert.equal(empty(issue({ customFields: { customfield_10016: 5 } })), false);
+  assert.equal(
+    notEmpty(issue({ customFields: { customfield_10016: 5 } })),
+    true,
+  );
+});
+
+test("custom field combines with builtin clauses via AND", () => {
+  const fn = compileJql('issuetype = Bug AND cf[10016] >= 5');
+  assert.equal(
+    fn(issue({ issueType: "Bug", customFields: { customfield_10016: 8 } })),
+    true,
+  );
+  assert.equal(
+    fn(issue({ issueType: "Bug", customFields: { customfield_10016: 2 } })),
+    false,
+  );
+  assert.equal(
+    fn(issue({ issueType: "Story", customFields: { customfield_10016: 8 } })),
+    false,
+  );
+});
+
+test("missing custom field value fails comparison gracefully", () => {
+  assert.equal(
+    compileJql("cf[10016] > 5")(issue({ customFields: undefined })),
+    false,
+  );
+  assert.equal(compileJql('cf[10050] = "Windows"')(issue({})), false);
+});

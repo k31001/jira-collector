@@ -34,6 +34,14 @@
  * Relative dates resolve against "now": `created > -4w` means created within
  * the last 4 weeks. Units: w(eeks) d(ays) h(ours) m(inutes).
  *
+ * Custom fields are referenced by id: `cf[10016]` or `customfield_10016`.
+ *   - text/select: = != in "not in" "is [not] empty" (matches the field's
+ *     value/displayName/name, and any element of a multi-value field)
+ *   - numeric: > >= < <= against a number literal (e.g. cf[10016] > 5)
+ *   - date custom fields: > >= < <= against a relative/absolute date
+ * Custom-field values are only available when the search fetched them
+ * (the resolution dashboard requests all fields).
+ *
  * Errors throw a JqlParseError with the cursor position so the settings UI
  * can highlight where parsing broke.
  */
@@ -48,18 +56,25 @@ export class JqlParseError extends Error {
   }
 }
 
-type DateOp = ">" | ">=" | "<" | "<=";
+type RelOp = ">" | ">=" | "<" | "<=";
 
+// `field` is a raw field name: a builtin (status, created, …) or a custom
+// field id ("customfield_10016", normalized from cf[10016]).
 type Comparison =
-  | { kind: "eq"; field: Field; value: string }
-  | { kind: "neq"; field: Field; value: string }
-  | { kind: "in"; field: Field; values: string[] }
-  | { kind: "notIn"; field: Field; values: string[] }
-  | { kind: "isEmpty"; field: Field }
-  | { kind: "isNotEmpty"; field: Field }
-  | { kind: "dateCompare"; field: Field; op: DateOp; raw: string };
+  | { kind: "eq"; field: string; value: string }
+  | { kind: "neq"; field: string; value: string }
+  | { kind: "in"; field: string; values: string[] }
+  | { kind: "notIn"; field: string; values: string[] }
+  | { kind: "isEmpty"; field: string }
+  | { kind: "isNotEmpty"; field: string }
+  | { kind: "relCompare"; field: string; op: RelOp; raw: string };
 
 type Ast = { kind: "and"; clauses: Comparison[] };
+
+const CUSTOM_FIELD_RE = /^customfield_\d+$/;
+function isCustomField(field: string): boolean {
+  return CUSTOM_FIELD_RE.test(field);
+}
 
 const TEXT_FIELDS = [
   "status",
@@ -76,7 +91,7 @@ type Field = (typeof FIELDS)[number];
 const FIELD_SET = new Set<string>(FIELDS);
 const DATE_FIELD_SET = new Set<string>(DATE_FIELDS);
 
-function isDateField(field: Field): boolean {
+function isDateField(field: string): boolean {
   return DATE_FIELD_SET.has(field);
 }
 
@@ -162,6 +177,17 @@ function tokenize(input: string): Token[] {
       tokens.push({ type: "string", value, position: start });
       continue;
     }
+    // Custom field shorthand `cf[NNNNN]` → normalize to `customfield_NNNNN`.
+    const cfMatch = /^cf\[(\d+)\]/i.exec(input.slice(i));
+    if (cfMatch) {
+      tokens.push({
+        type: "ident",
+        value: `customfield_${cfMatch[1]}`,
+        position: i,
+      });
+      i += cfMatch[0].length;
+      continue;
+    }
     // Bare identifier / value — letters, digits, _, -, +, ., :
     // (+/- and : let relative dates like `-4w` and ISO timestamps tokenize
     // as a single value.)
@@ -224,28 +250,30 @@ class Parser {
       throw new JqlParseError("Expected field name", fieldTok.position);
     }
     const lower = fieldTok.value.toLowerCase();
-    if (!FIELD_SET.has(lower)) {
+    const custom = isCustomField(lower);
+    if (!FIELD_SET.has(lower) && !custom) {
       throw new JqlParseError(
-        `Unknown field '${fieldTok.value}'. Supported: ${FIELDS.join(", ")}`,
+        `Unknown field '${fieldTok.value}'. Supported: ${FIELDS.join(", ")}, or cf[NNNNN]`,
         fieldTok.position,
       );
     }
-    const field = lower as Field;
-    const dateField = isDateField(field);
+    const field = lower;
+    const dateField = isDateField(field); // builtin date field
     const op = this.advance();
 
-    // Relational operators are date-only.
+    // Relational operators apply to builtin date fields and custom fields
+    // (numeric / date custom fields).
     if (
       op.type === "punct" &&
       (op.value === ">" || op.value === ">=" || op.value === "<" || op.value === "<=")
     ) {
-      if (!dateField) {
+      if (!dateField && !custom) {
         throw new JqlParseError(
-          `'${op.value}' only applies to date fields (created, updated, resolved)`,
+          `'${op.value}' only applies to date fields (created, updated, resolved) or custom fields (cf[…])`,
           op.position,
         );
       }
-      return { kind: "dateCompare", field, op: op.value, raw: this.parseValue() };
+      return { kind: "relCompare", field, op: op.value, raw: this.parseValue() };
     }
 
     if (op.type === "punct" && op.value === "=") {
@@ -405,13 +433,16 @@ function evaluate(ast: Ast, issue: NormalizedIssue, now: number): boolean {
 }
 
 function evalClause(c: Comparison, issue: NormalizedIssue, now: number): boolean {
-  if (c.kind === "dateCompare") {
-    return evalDateCompare(c, issue, now);
+  if (c.kind === "relCompare") {
+    return evalRelCompare(c, issue, now);
+  }
+  if (isCustomField(c.field)) {
+    return evalCustomEquality(c, issue);
   }
   if (c.field === "labels") {
     return evalLabels(c, issue.labels);
   }
-  const actual = readField(c.field, issue);
+  const actual = readField(c.field as Exclude<Field, "labels">, issue);
   switch (c.kind) {
     case "eq":
       return actual === c.value;
@@ -425,6 +456,86 @@ function evalClause(c: Comparison, issue: NormalizedIssue, now: number): boolean
       return actual === undefined || actual === "";
     case "isNotEmpty":
       return actual !== undefined && actual !== "";
+  }
+}
+
+/* ----------------------------- custom fields ----------------------------- */
+
+/** Flatten a custom-field value into comparable strings (selects, arrays…). */
+function customToStrings(v: unknown): string[] {
+  if (v === null || v === undefined) return [];
+  if (Array.isArray(v)) return v.flatMap(customToStrings);
+  if (typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    if (typeof o.value === "string" || typeof o.value === "number") {
+      return [String(o.value)];
+    }
+    if (typeof o.displayName === "string") return [o.displayName];
+    if (typeof o.name === "string") return [o.name];
+    return [];
+  }
+  return [String(v)];
+}
+
+function customToNumber(v: unknown): number | null {
+  if (typeof v === "number") return v;
+  if (typeof v === "string") {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  if (v && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    if (typeof o.value === "number") return o.value;
+    if (typeof o.value === "string") {
+      const n = Number(o.value);
+      return Number.isFinite(n) ? n : null;
+    }
+  }
+  return null;
+}
+
+function customToDateString(v: unknown): string | null {
+  if (typeof v === "string") return v;
+  if (v && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    if (typeof o.value === "string") return o.value;
+  }
+  return null;
+}
+
+function evalCustomEquality(
+  c: Exclude<Comparison, { kind: "relCompare" }>,
+  issue: NormalizedIssue,
+): boolean {
+  const strs = customToStrings(issue.customFields?.[c.field]);
+  switch (c.kind) {
+    case "eq":
+      return strs.includes(c.value);
+    case "neq":
+      return !strs.includes(c.value);
+    case "in":
+      return strs.some((s) => c.values.includes(s));
+    case "notIn":
+      return strs.every((s) => !c.values.includes(s));
+    case "isEmpty":
+      return strs.length === 0;
+    case "isNotEmpty":
+      return strs.length > 0;
+  }
+}
+
+function cmpNum(a: number, b: number, op: RelOp): boolean {
+  switch (op) {
+    case ">":
+      return a > b;
+    case ">=":
+      return a >= b;
+    case "<":
+      return a < b;
+    case "<=":
+      return a <= b;
+    default:
+      return false;
   }
 }
 
@@ -448,32 +559,39 @@ function resolveDateExpr(raw: string, now: number): number | null {
   return Number.isFinite(t) ? t : null;
 }
 
-function evalDateCompare(
-  c: Extract<Comparison, { kind: "dateCompare" }>,
+function evalRelCompare(
+  c: Extract<Comparison, { kind: "relCompare" }>,
   issue: NormalizedIssue,
   now: number,
 ): boolean {
+  // Custom fields: numeric comparison when the literal is a plain number and
+  // the value is numeric; otherwise fall back to a date comparison.
+  if (isCustomField(c.field)) {
+    const v = issue.customFields?.[c.field];
+    if (/^-?\d+(\.\d+)?$/.test(c.raw)) {
+      const num = customToNumber(v);
+      if (num !== null) return cmpNum(num, Number(c.raw), c.op);
+    }
+    const ds = customToDateString(v);
+    if (ds) {
+      const a = Date.parse(ds);
+      const t = resolveDateExpr(c.raw, now);
+      if (Number.isFinite(a) && t !== null) return cmpNum(a, t, c.op);
+    }
+    return false;
+  }
+
+  // Builtin date field.
   const dateStr = readDateField(c.field, issue);
   if (!dateStr) return false; // missing date can't satisfy a comparison
   const actual = Date.parse(dateStr);
   if (!Number.isFinite(actual)) return false;
   const target = resolveDateExpr(c.raw, now);
   if (target === null) return false;
-  switch (c.op) {
-    case ">":
-      return actual > target;
-    case ">=":
-      return actual >= target;
-    case "<":
-      return actual < target;
-    case "<=":
-      return actual <= target;
-    default:
-      return false;
-  }
+  return cmpNum(actual, target, c.op);
 }
 
-function readDateField(field: Field, issue: NormalizedIssue): string | undefined {
+function readDateField(field: string, issue: NormalizedIssue): string | undefined {
   switch (field) {
     case "created":
       return issue.created;

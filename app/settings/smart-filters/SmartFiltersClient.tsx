@@ -426,6 +426,9 @@ function ValueForm({
           <div>
             날짜 필드: <code className="text-xs">created</code>, <code className="text-xs">updated</code>, <code className="text-xs">resolved</code> · 연산자 <code className="text-xs">&gt; &gt;= &lt; &lt;=</code> · 값 <code className="text-xs">-4w</code> <code className="text-xs">-7d</code> <code className="text-xs">-2h</code> <code className="text-xs">-30m</code> 또는 <code className="text-xs">2026-01-01</code>
           </div>
+          <div>
+            커스텀 필드: <code className="text-xs">cf[10016]</code> (또는 <code className="text-xs">customfield_10016</code>) · 텍스트 <code className="text-xs">= != in</code>, 숫자 <code className="text-xs">&gt; &gt;= &lt; &lt;=</code>
+          </div>
           <div>조합 <code className="text-xs">AND</code></div>
         </div>
       </div>

@@ -60,6 +60,9 @@ type Issue = {
     issuetype: { name: string };
     labels: string[];
     comment: { comments: Comment[]; total: number; maxResults: number; startAt: number };
+    // Synthetic custom fields so cf[NNNNN] JQL can be exercised locally.
+    customfield_10016?: number | null; // Story Points
+    customfield_10050?: { value: string } | null; // 운영체제 (single select)
   };
   changelog?: { startAt: number; maxResults: number; total: number; histories: ChangelogHistory[] };
 };
@@ -328,22 +331,25 @@ function generateBulkIssues(opts: {
       status = pick(rng, STATUS_UNRESOLVED);
     }
 
-    out.push(
-      makeIssue({
-        baseUrl: opts.baseUrl,
-        key,
-        summary,
-        status,
-        assignee,
-        reporter,
-        priority,
-        issuetype,
-        labels,
-        createdDaysAgo,
-        updatedDaysAgo,
-        resolved: isResolved,
-      }),
-    );
+    const issue = makeIssue({
+      baseUrl: opts.baseUrl,
+      key,
+      summary,
+      status,
+      assignee,
+      reporter,
+      priority,
+      issuetype,
+      labels,
+      createdDaysAgo,
+      updatedDaysAgo,
+      resolved: isResolved,
+    });
+    // Synthetic custom fields: Story Points (Fibonacci) and OS (single select).
+    issue.fields.customfield_10016 = pick(rng, [1, 2, 3, 5, 8, 13]);
+    issue.fields.customfield_10050 =
+      rng() < 0.6 ? { value: pick(rng, ["Windows", "Linux", "macOS"]) } : null;
+    out.push(issue);
   }
   return out;
 }
@@ -627,7 +633,13 @@ function seedTeamB(baseUrl: string): Issue[] {
  * the list. When `fields` is undefined we return the issue unchanged.
  */
 function projectFields(issue: Issue, fields: string[] | undefined): Issue {
-  if (!fields || fields.length === 0) return issue;
+  // changelog is never part of a `fields` projection — it rides on the
+  // top-level `expand`, so drop it from field-limited responses.
+  const { changelog: _drop, ...rest } = issue;
+  void _drop;
+  if (!fields || fields.length === 0) return rest;
+  // `*all` / `*navigable` → return every field (including custom fields).
+  if (fields.includes("*all") || fields.includes("*navigable")) return rest;
   const include = new Set(fields);
   const f = issue.fields;
   const filtered = {} as Issue["fields"];
@@ -642,11 +654,14 @@ function projectFields(issue: Issue, fields: string[] | undefined): Issue {
   if (include.has("issuetype")) filtered.issuetype = f.issuetype;
   if (include.has("labels")) filtered.labels = f.labels;
   if (include.has("comment")) filtered.comment = f.comment;
-  // changelog is never part of a `fields` projection — it rides on the
-  // top-level `expand`, so drop it here so search/field-limited responses
-  // stay lean.
-  const { changelog: _drop, ...rest } = issue;
-  void _drop;
+  // Pass through any explicitly-requested custom fields.
+  for (const key of fields) {
+    if (key.startsWith("customfield_")) {
+      (filtered as Record<string, unknown>)[key] = (
+        f as Record<string, unknown>
+      )[key];
+    }
+  }
   return { ...rest, fields: filtered };
 }
 

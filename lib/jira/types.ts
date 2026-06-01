@@ -61,6 +61,12 @@ export type NormalizedIssue = {
     body: string;
     created?: string;
   };
+  /**
+   * Raw Jira custom-field values keyed by field id (e.g. "customfield_10016").
+   * Only populated when the search requested them. The restricted JQL
+   * evaluator reads these for `cf[10016]`-style clauses.
+   */
+  customFields?: Record<string, unknown>;
   note?: string;
 };
 

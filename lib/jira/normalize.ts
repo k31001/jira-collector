@@ -17,6 +17,17 @@ export function normalizeIssue(
   const comments = f.comment?.comments ?? [];
   const lastComment = comments.length > 0 ? comments[comments.length - 1] : undefined;
 
+  // Collect custom-field values (customfield_NNNNN) when present so the
+  // restricted JQL evaluator can reference them via cf[NNNNN]. Skip nulls to
+  // keep the payload lean.
+  let customFields: Record<string, unknown> | undefined;
+  for (const key of Object.keys(f)) {
+    if (!key.startsWith("customfield_")) continue;
+    const value = (f as Record<string, unknown>)[key];
+    if (value === null || value === undefined) continue;
+    (customFields ??= {})[key] = value;
+  }
+
   // Jira's `resolutiondate` is only populated when the Resolution field is
   // set, which many Cloud Scrum/Kanban workflows skip when an issue is
   // transitioned to a Done-category status via the board. Fall back to
@@ -52,6 +63,7 @@ export function normalizeIssue(
           created: lastComment.created,
         }
       : undefined,
+    customFields,
     note,
   };
 }

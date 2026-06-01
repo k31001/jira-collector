@@ -93,7 +93,11 @@ export async function fetchResolutionDashboardIssues(
         return { ...base, error: "Jira 서버 설정을 찾을 수 없습니다" };
       }
       try {
-        const raws = await searchIssues(serverConfig, s.jql);
+        // Request all fields (including custom fields) so the restricted JQL
+        // evaluator can reference cf[NNNNN] in smart filters / ratio analysis.
+        const raws = await searchIssues(serverConfig, s.jql, {
+          fields: ["*all"],
+        });
         const issues = raws.map((r) =>
           normalizeIssue(r, serverConfig, ctx, undefined),
         );

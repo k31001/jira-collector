@@ -47,8 +47,15 @@ const SUPPORTED = (
       또는 <code className="text-xs">2026-01-01</code>
     </div>
     <div>
+      커스텀 필드: <code className="text-xs">cf[10016]</code>(또는{" "}
+      <code className="text-xs">customfield_10016</code>) · 텍스트는{" "}
+      <code className="text-xs">= != in</code>, 숫자는{" "}
+      <code className="text-xs">&gt; &gt;= &lt; &lt;=</code>
+    </div>
+    <div>
       조합 <code className="text-xs">AND</code> · 예{" "}
-      <code className="text-xs">issuetype = Bug AND created &gt; -4w</code>
+      <code className="text-xs">issuetype = Bug AND created &gt; -4w</code>,{" "}
+      <code className="text-xs">cf[10016] &gt;= 5</code>
     </div>
   </div>
 );
