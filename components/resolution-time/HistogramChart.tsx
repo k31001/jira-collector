@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { HelpHint, HelpRow } from "@/components/help-hint";
 import {
   Select,
   SelectContent,
@@ -93,7 +94,21 @@ export function HistogramChart({
   return (
     <Card>
       <CardHeader className="pb-2 flex-row items-center justify-between space-y-0">
-        <CardTitle className="text-sm">해결 시간 분포</CardTitle>
+        <CardTitle className="flex items-center gap-1.5 text-sm">
+          해결 시간 분포
+          <HelpHint title="해결 시간 분포">
+            <HelpRow label="값:">
+              해결된 이슈를 소요 시간 구간(예: 0–1일, 1–2일…)별로 센 것입니다.
+            </HelpRow>
+            <HelpRow label="왼쪽에 몰림:">
+              대부분 빨리 끝난다는 뜻으로 건강합니다. 오른쪽 꼬리가 길면 일부가
+              매우 오래 걸린다는 신호.
+            </HelpRow>
+            <HelpRow label="막대 클릭:">
+              그 구간에 해당하는 이슈 목록을 바로 확인할 수 있습니다.
+            </HelpRow>
+          </HelpHint>
+        </CardTitle>
         {histograms.length > 1 && (
           <div className="w-[200px]">
             <Select

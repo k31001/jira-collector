@@ -19,6 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { HelpHint, HelpRow } from "@/components/help-hint";
 import {
   Select,
   SelectContent,
@@ -204,9 +205,23 @@ export function AgingWipTable({
   return (
     <Card>
       <CardHeader className="pb-2 flex-row items-center justify-between space-y-0">
-        <CardTitle className="text-sm">
+        <CardTitle className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
           노화 중인 미해결 이슈
-          <span className="ml-2 text-xs font-normal text-muted-foreground">
+          <HelpHint title="노화 중인 미해결 이슈">
+            <HelpRow label="대상:">
+              임계값보다 오래 열려 있는, 아직 끝나지 않은 이슈입니다(완료된
+              이슈가 아니라 &ldquo;지금 막힌 일&rdquo;).
+            </HelpRow>
+            <HelpRow label="나이 / 미접촉:">
+              나이는 생성 후 경과, 미접촉은 마지막 업데이트 후 경과입니다.
+              미접촉이 주황색이면 한동안 방치된 상태.
+            </HelpRow>
+            <HelpRow label="활용:">
+              나이·미접촉이 큰 이슈부터 점검하세요. 차원별 분포로 어느
+              담당자/타입에 쏠렸는지 보입니다.
+            </HelpRow>
+          </HelpHint>
+          <span className="text-xs font-normal text-muted-foreground">
             {agingIssues.length}개 · 미해결의 {(openShare * 100).toFixed(1)}%
           </span>
         </CardTitle>

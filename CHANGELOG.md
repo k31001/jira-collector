@@ -12,6 +12,14 @@
 
 ---
 
+## [1.16.0] — 2026-06-01
+
+### Added
+- **그래프 해석 도움말** — Resolution Time 대시보드의 9개 분석 카드 제목 옆에 클릭형 `?` 도움말 버튼 추가. 클릭하면 각 그래프를 어떻게 읽는지(값의 의미, 건강한/주의해야 할 모양, 취해야 할 행동)를 짧은 가이드로 보여줍니다. 평균 해결 시간 추이·미해결 이슈 추이·처리량 vs 해결 시간·버그 유입 비율·해결 시간 분포·기간 비교·노화 중인 미해결 이슈·오래 걸린 이슈 분석·상태별 체류 시간 모두 포함.
+- 재사용 컴포넌트 `components/help-hint.tsx` (`HelpHint` + `HelpRow`, Popover 기반).
+
+---
+
 ## [1.15.0] — 2026-06-01
 
 ### Added
@@ -139,6 +147,7 @@
 ### Changed
 - **LongTailTable(오래 걸린 이슈 분석)에 10개 단위 페이지네이션** — 임계값 초과 이슈를 10개씩 분할 표시 (이전/다음 버튼 + `X/N 페이지` 카운터 + `총 N개 중 X–Y개 표시`). 임계값/소스/정렬 변경 시 페이지 자동 리셋. 현재 페이지만 렌더링하여 다수 이슈에서 체감 성능 개선.
 
+[1.16.0]: https://github.com/k31001/jira-collector/releases/tag/v1.16.0
 [1.15.0]: https://github.com/k31001/jira-collector/releases/tag/v1.15.0
 [1.14.0]: https://github.com/k31001/jira-collector/releases/tag/v1.14.0
 [1.13.0]: https://github.com/k31001/jira-collector/releases/tag/v1.13.0

@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { HelpHint, HelpRow } from "@/components/help-hint";
 import type { TimeBucket } from "@/lib/resolution-time";
 import type { Series } from "./TimeSeriesChart";
 
@@ -70,8 +71,20 @@ export function UnresolvedTrendChart({
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm">
+        <CardTitle className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
           미해결 이슈 추이 ({bucketLabel})
+          <HelpHint title="미해결 이슈 추이">
+            <HelpRow label="각 점:">
+              그 기간 끝 시점에 아직 풀리지 않은 이슈 수(백로그 스냅샷)입니다.
+            </HelpRow>
+            <HelpRow label="우상향:">
+              유입이 처리보다 많아 백로그가 쌓이는 중. 평평하거나 하락하는
+              모양이 건강합니다.
+            </HelpRow>
+            <HelpRow label="해석 팁:">
+              해결 시간이 좋아 보여도 이 선이 오르면 일이 쌓이고 있다는 뜻입니다.
+            </HelpRow>
+          </HelpHint>
         </CardTitle>
       </CardHeader>
       <CardContent>

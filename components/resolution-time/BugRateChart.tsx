@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { HelpHint, HelpRow } from "@/components/help-hint";
 import {
   buildBugRateSeries,
   type TimeBucket,
@@ -96,9 +97,23 @@ export function BugRateChart({
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm">
+        <CardTitle className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
           버그 유입 비율 ({bucketLabel})
-          <span className="ml-2 text-xs font-normal text-muted-foreground">
+          <HelpHint title="버그 유입 비율">
+            <HelpRow label="값:">
+              그 기간에 생성된 이슈 중 버그/결함이 차지하는 비중(%)입니다.
+              생성일 기준이라 &ldquo;들어오는 일&rdquo;의 품질을 봅니다.
+            </HelpRow>
+            <HelpRow label="선이 오를수록:">
+              유입 작업 중 결함 비율이 커지는 중 = 품질 악화 또는 불 끄기가
+              늘고 있다는 신호.
+            </HelpRow>
+            <HelpRow label="해석 팁:">
+              해결 시간이 좋아도 이 비율이 높으면 신규 가치보다 수습에 시간을
+              쓰는 중일 수 있습니다.
+            </HelpRow>
+          </HelpHint>
+          <span className="text-xs font-normal text-muted-foreground">
             생성된 이슈 중 버그/결함 비중
           </span>
         </CardTitle>

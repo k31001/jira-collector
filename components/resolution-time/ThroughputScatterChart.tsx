@@ -13,6 +13,7 @@ import {
   ZAxis,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { HelpHint, HelpRow } from "@/components/help-hint";
 import { formatHours, type TimeBucket } from "@/lib/resolution-time";
 import type { Series } from "./TimeSeriesChart";
 
@@ -68,9 +69,23 @@ export function ThroughputScatterChart({
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm">
+        <CardTitle className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
           처리량 vs 해결 시간 ({bucketLabel})
-          <span className="ml-2 text-xs font-normal text-muted-foreground">
+          <HelpHint title="처리량 vs 해결 시간">
+            <HelpRow label="점 1개:">
+              한 기간을 나타냅니다. X축 = 그 기간에 완료한 이슈 수(처리량), Y축
+              = 그 이슈들의 평균 해결 시간.
+            </HelpRow>
+            <HelpRow label="오른쪽 아래:">
+              많이 + 빨리 = 이상적입니다. 위로 갈수록 느리고, 왼쪽일수록
+              처리량이 적습니다.
+            </HelpRow>
+            <HelpRow label="우상단으로 몰리면:">
+              많이 했지만 오래 걸린 상태 — 큰 작업 위주이거나 과부하 신호일 수
+              있습니다.
+            </HelpRow>
+          </HelpHint>
+          <span className="text-xs font-normal text-muted-foreground">
             점 1개 = 한 기간 · 오른쪽 아래일수록 건강
           </span>
         </CardTitle>

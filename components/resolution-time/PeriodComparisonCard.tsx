@@ -3,6 +3,7 @@
 import * as React from "react";
 import { ArrowDown, ArrowRight, ArrowUp, GitCompare } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { HelpHint, HelpRow } from "@/components/help-hint";
 import {
   formatHours,
   partitionResolvedByPeriod,
@@ -51,10 +52,25 @@ export function PeriodComparisonCard({
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm">
-          <GitCompare className="mr-1 inline h-3.5 w-3.5" />
-          기간 비교
-          <span className="ml-2 text-xs font-normal text-muted-foreground">
+        <CardTitle className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
+          <span className="flex items-center gap-1">
+            <GitCompare className="h-3.5 w-3.5" />
+            기간 비교
+          </span>
+          <HelpHint title="기간 비교">
+            <HelpRow label="비교:">
+              최근 {windowDays}일과 그 직전 {windowDays}일을 나란히 비교합니다.
+            </HelpRow>
+            <HelpRow label="색:">
+              개선이면 초록, 악화면 빨강. 처리량은 오를수록 좋고, 해결
+              시간(평균/중앙값/P90)은 내릴수록 좋습니다.
+            </HelpRow>
+            <HelpRow label="P90:">
+              느린 쪽 10%의 체감 시간. 평균이 좋아도 P90이 나쁘면 결과가
+              들쭉날쭉하다는 뜻입니다.
+            </HelpRow>
+          </HelpHint>
+          <span className="text-xs font-normal text-muted-foreground">
             최근 {windowDays}일 vs 직전 {windowDays}일
           </span>
         </CardTitle>

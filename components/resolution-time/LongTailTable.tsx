@@ -19,6 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { HelpHint, HelpRow } from "@/components/help-hint";
 import {
   Select,
   SelectContent,
@@ -221,9 +222,22 @@ export function LongTailTable({
   return (
     <Card>
       <CardHeader className="pb-2 flex-row items-center justify-between space-y-0">
-        <CardTitle className="text-sm">
+        <CardTitle className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
           오래 걸린 이슈 분석
-          <span className="ml-2 text-xs font-normal text-muted-foreground">
+          <HelpHint title="오래 걸린 이슈 분석">
+            <HelpRow label="대상:">
+              이미 해결됐지만 임계값보다 오래 걸린 이슈입니다(노화 WIP와 달리
+              이미 끝난 일의 사후 분석).
+            </HelpRow>
+            <HelpRow label="느림 배율:">
+              전체 중앙값 대비 몇 배 걸렸는지입니다. 클수록 두드러진 이상치.
+            </HelpRow>
+            <HelpRow label="활용:">
+              차원별 분포에서 특정 담당자/라벨/타입에 쏠려 있으면 그쪽이 느림의
+              원인일 가능성이 큽니다.
+            </HelpRow>
+          </HelpHint>
+          <span className="text-xs font-normal text-muted-foreground">
             {slowIssues.length}개 · 전체의{" "}
             {(slowShare * 100).toFixed(1)}%
           </span>

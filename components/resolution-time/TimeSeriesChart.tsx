@@ -13,6 +13,7 @@ import {
   Legend,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { HelpHint, HelpRow } from "@/components/help-hint";
 import {
   findBucketLabelForDate,
   formatHours,
@@ -129,8 +130,20 @@ export function TimeSeriesChart({
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm">
+        <CardTitle className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
           평균 해결 시간 추이 ({bucketLabel})
+          <HelpHint title="평균 해결 시간 추이">
+            <HelpRow label="각 점:">
+              그 기간에 해결된 이슈들의 평균 소요 시간(생성→해결)입니다.
+            </HelpRow>
+            <HelpRow label="선이 위로:">
+              해결이 점점 느려지는 중 — 병목이나 WIP(동시 진행 작업) 과다를
+              의심하세요. 아래로면 빨라지는 중입니다.
+            </HelpRow>
+            <HelpRow label="세로 점선:">
+              마일스톤(릴리스 등) 기준점. 소스(JQL)별로 선 색이 다릅니다.
+            </HelpRow>
+          </HelpHint>
         </CardTitle>
       </CardHeader>
       <CardContent>

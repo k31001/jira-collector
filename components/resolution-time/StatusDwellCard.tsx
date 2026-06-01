@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Loader2, Timer, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { HelpHint, HelpRow } from "@/components/help-hint";
 import { Button } from "@/components/ui/button";
 import { formatHours } from "@/lib/resolution-time";
 import { formatRelative } from "@/lib/utils";
@@ -57,10 +58,26 @@ export function StatusDwellCard({
   return (
     <Card>
       <CardHeader className="pb-2 flex-row items-center justify-between space-y-0">
-        <CardTitle className="text-sm">
-          <Timer className="mr-1 inline h-3.5 w-3.5" />
-          상태별 체류 시간
-          <span className="ml-2 text-xs font-normal text-muted-foreground">
+        <CardTitle className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
+          <span className="flex items-center gap-1">
+            <Timer className="h-3.5 w-3.5" />
+            상태별 체류 시간
+          </span>
+          <HelpHint title="상태별 체류 시간">
+            <HelpRow label="값:">
+              이슈가 각 워크플로 상태(To Do / In Progress / In Review …)에 머문
+              평균 시간입니다. 변경 이력으로 계산합니다.
+            </HelpRow>
+            <HelpRow label="병목 찾기:">
+              막대가 긴 상태가 그 단계의 병목입니다. 예를 들어 In Review가 길면
+              리뷰 단계에서 오래 정체된다는 뜻.
+            </HelpRow>
+            <HelpRow label="참고:">
+              종료 상태(Done 등)는 0에 가까운 게 정상이고, ×N은 집계에 쓰인 표본
+              수입니다.
+            </HelpRow>
+          </HelpHint>
+          <span className="text-xs font-normal text-muted-foreground">
             이슈가 각 상태에 머문 평균 시간
           </span>
         </CardTitle>
