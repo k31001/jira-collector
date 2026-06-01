@@ -12,6 +12,19 @@
 
 ---
 
+## [1.18.0] — 2026-06-02
+
+### Added
+- **JQL 평가기에 날짜 필드/비교 지원** — 스마트 필터·비율 분석에서 쓰는 제한 JQL이 이제 날짜 조건을 지원합니다.
+  - 날짜 필드: `created`, `updated`, `resolved`(별칭 `resolutiondate`).
+  - 연산자: `>` `>=` `<` `<=`, 그리고 `resolved is empty` / `is not empty`(미해결/해결 필터).
+  - 값: 상대 날짜 `-4w` `-7d` `-2h` `-30m`(now 기준, w/d/h/m), 또는 절대 날짜 `2026-01-01`.
+  - 조합 예: `issuetype = Bug AND created > -4w`(최근 4주 버그), `resolved > -1w AND priority = High`.
+  - 관계 연산자는 날짜 필드에만, 텍스트 필드에는 거부(명확한 오류 메시지). 단위 테스트 7개 추가.
+- 설정(스마트 필터·비율 분석) 폼의 지원 문법 안내에 날짜 필드/연산자/상대날짜 예시 추가.
+
+---
+
 ## [1.17.0] — 2026-06-01
 
 ### Added
@@ -158,6 +171,7 @@
 ### Changed
 - **LongTailTable(오래 걸린 이슈 분석)에 10개 단위 페이지네이션** — 임계값 초과 이슈를 10개씩 분할 표시 (이전/다음 버튼 + `X/N 페이지` 카운터 + `총 N개 중 X–Y개 표시`). 임계값/소스/정렬 변경 시 페이지 자동 리셋. 현재 페이지만 렌더링하여 다수 이슈에서 체감 성능 개선.
 
+[1.18.0]: https://github.com/k31001/jira-collector/releases/tag/v1.18.0
 [1.17.0]: https://github.com/k31001/jira-collector/releases/tag/v1.17.0
 [1.16.0]: https://github.com/k31001/jira-collector/releases/tag/v1.16.0
 [1.15.0]: https://github.com/k31001/jira-collector/releases/tag/v1.15.0

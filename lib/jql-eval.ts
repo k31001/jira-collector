@@ -10,15 +10,17 @@
  *
  * Grammar (case-insensitive keywords; case-sensitive values):
  *   expr   := clause (AND clause)*
- *   clause := FIELD OP value
+ *   clause := FIELD OP value            (= != for text/date)
+ *           | DATEFIELD RELOP date      (> >= < <= )
  *           | FIELD IN list
  *           | FIELD NOT IN list
  *           | FIELD IS EMPTY
  *           | FIELD IS NOT EMPTY
  *   value  := STRING | BAREWORD
+ *   date   := relative (e.g. -4w, -7d, -2h, -30m) | absolute (2026-01-01)
  *   list   := '(' value (',' value)* ')'
  *
- * Supported fields and how they read off a NormalizedIssue:
+ * Supported text fields and how they read off a NormalizedIssue:
  *   status      → effectiveStatus.label
  *   assignee    → assignee?.name
  *   reporter    → reporter?.name
@@ -26,6 +28,11 @@
  *   issuetype   → issueType
  *   labels      → labels (array; equality and IN check membership)
  *   resolution  → "Done" if statusCategoryKey === "done", otherwise "Unresolved"
+ *
+ * Supported date fields (compared with > >= < <=, or is [not] empty):
+ *   created, updated, resolved (alias: resolutiondate)
+ * Relative dates resolve against "now": `created > -4w` means created within
+ * the last 4 weeks. Units: w(eeks) d(ays) h(ours) m(inutes).
  *
  * Errors throw a JqlParseError with the cursor position so the settings UI
  * can highlight where parsing broke.
@@ -41,17 +48,20 @@ export class JqlParseError extends Error {
   }
 }
 
+type DateOp = ">" | ">=" | "<" | "<=";
+
 type Comparison =
   | { kind: "eq"; field: Field; value: string }
   | { kind: "neq"; field: Field; value: string }
   | { kind: "in"; field: Field; values: string[] }
   | { kind: "notIn"; field: Field; values: string[] }
   | { kind: "isEmpty"; field: Field }
-  | { kind: "isNotEmpty"; field: Field };
+  | { kind: "isNotEmpty"; field: Field }
+  | { kind: "dateCompare"; field: Field; op: DateOp; raw: string };
 
 type Ast = { kind: "and"; clauses: Comparison[] };
 
-const FIELDS = [
+const TEXT_FIELDS = [
   "status",
   "assignee",
   "reporter",
@@ -60,13 +70,24 @@ const FIELDS = [
   "labels",
   "resolution",
 ] as const;
+const DATE_FIELDS = ["created", "updated", "resolved", "resolutiondate"] as const;
+const FIELDS = [...TEXT_FIELDS, ...DATE_FIELDS] as const;
 type Field = (typeof FIELDS)[number];
 const FIELD_SET = new Set<string>(FIELDS);
+const DATE_FIELD_SET = new Set<string>(DATE_FIELDS);
+
+function isDateField(field: Field): boolean {
+  return DATE_FIELD_SET.has(field);
+}
 
 type Token =
   | { type: "ident"; value: string; position: number }
   | { type: "string"; value: string; position: number }
-  | { type: "punct"; value: "(" | ")" | "," | "=" | "!="; position: number }
+  | {
+      type: "punct";
+      value: "(" | ")" | "," | "=" | "!=" | ">" | ">=" | "<" | "<=";
+      position: number;
+    }
   | { type: "eof"; position: number };
 
 /* -------------------------------------------------------------------------- */
@@ -100,6 +121,26 @@ function tokenize(input: string): Token[] {
       i++;
       continue;
     }
+    if (ch === ">") {
+      if (input[i + 1] === "=") {
+        tokens.push({ type: "punct", value: ">=", position: i });
+        i += 2;
+      } else {
+        tokens.push({ type: "punct", value: ">", position: i });
+        i++;
+      }
+      continue;
+    }
+    if (ch === "<") {
+      if (input[i + 1] === "=") {
+        tokens.push({ type: "punct", value: "<=", position: i });
+        i += 2;
+      } else {
+        tokens.push({ type: "punct", value: "<", position: i });
+        i++;
+      }
+      continue;
+    }
     if (ch === '"' || ch === "'") {
       const quote = ch;
       const start = i;
@@ -121,10 +162,12 @@ function tokenize(input: string): Token[] {
       tokens.push({ type: "string", value, position: start });
       continue;
     }
-    // Bare identifier / value — letters, digits, _, -, ., :
-    if (/[A-Za-z0-9_\-.:]/.test(ch)) {
+    // Bare identifier / value — letters, digits, _, -, +, ., :
+    // (+/- and : let relative dates like `-4w` and ISO timestamps tokenize
+    // as a single value.)
+    if (/[A-Za-z0-9_+\-.:]/.test(ch)) {
       const start = i;
-      while (i < input.length && /[A-Za-z0-9_\-.:]/.test(input[i])) {
+      while (i < input.length && /[A-Za-z0-9_+\-.:]/.test(input[i])) {
         i++;
       }
       tokens.push({
@@ -188,21 +231,58 @@ class Parser {
       );
     }
     const field = lower as Field;
+    const dateField = isDateField(field);
     const op = this.advance();
+
+    // Relational operators are date-only.
+    if (
+      op.type === "punct" &&
+      (op.value === ">" || op.value === ">=" || op.value === "<" || op.value === "<=")
+    ) {
+      if (!dateField) {
+        throw new JqlParseError(
+          `'${op.value}' only applies to date fields (created, updated, resolved)`,
+          op.position,
+        );
+      }
+      return { kind: "dateCompare", field, op: op.value, raw: this.parseValue() };
+    }
+
     if (op.type === "punct" && op.value === "=") {
+      if (dateField) {
+        throw new JqlParseError(
+          "Date fields use > >= < <= or 'is [not] empty'",
+          op.position,
+        );
+      }
       return { kind: "eq", field, value: this.parseValue() };
     }
     if (op.type === "punct" && op.value === "!=") {
+      if (dateField) {
+        throw new JqlParseError(
+          "Date fields use > >= < <= or 'is [not] empty'",
+          op.position,
+        );
+      }
       return { kind: "neq", field, value: this.parseValue() };
     }
     if (op.type === "ident") {
       const lo = op.value.toLowerCase();
       if (lo === "in") {
+        if (dateField) {
+          throw new JqlParseError("IN is not supported for date fields", op.position);
+        }
         return { kind: "in", field, values: this.parseList() };
       }
       if (lo === "not") {
         const next = this.advance();
         if (next.type === "ident" && next.value.toLowerCase() === "in") {
+          if (dateField) {
+            throw new JqlParseError(
+              "NOT IN is not supported for date fields",
+              next.position,
+            );
+          }
           return { kind: "notIn", field, values: this.parseList() };
         }
         throw new JqlParseError("Expected 'in' after 'not'", next.position);
@@ -232,7 +312,7 @@ class Parser {
       }
     }
     throw new JqlParseError(
-      `Expected '=', '!=', 'in', 'not in', or 'is [not] empty' but got '${tokenText(op)}'`,
+      `Expected '=', '!=', '>', '>=', '<', '<=', 'in', 'not in', or 'is [not] empty' but got '${tokenText(op)}'`,
       op.position,
     );
   }
@@ -286,9 +366,15 @@ export function parseJql(input: string): Ast {
   return new Parser(tokens).parse();
 }
 
-export function compileJql(input: string): CompiledJql {
+/**
+ * Compile to a predicate. `now` anchors relative dates (e.g. `created > -4w`)
+ * and defaults to the current time; callers may pass a fixed value for
+ * deterministic behaviour/tests. It's captured at compile time, which is fine
+ * because callers recompile on each render.
+ */
+export function compileJql(input: string, now: number = Date.now()): CompiledJql {
   const ast = parseJql(input);
-  return (issue) => evaluate(ast, issue);
+  return (issue) => evaluate(ast, issue, now);
 }
 
 /**
@@ -296,9 +382,12 @@ export function compileJql(input: string): CompiledJql {
  * silently skip invalid stored expressions (e.g., dashboard render) rather
  * than crash the page.
  */
-export function tryCompileJql(input: string): CompiledJql | null {
+export function tryCompileJql(
+  input: string,
+  now: number = Date.now(),
+): CompiledJql | null {
   try {
-    return compileJql(input);
+    return compileJql(input, now);
   } catch {
     return null;
   }
@@ -308,14 +397,17 @@ export function tryCompileJql(input: string): CompiledJql | null {
 /*  Evaluator                                                                  */
 /* -------------------------------------------------------------------------- */
 
-function evaluate(ast: Ast, issue: NormalizedIssue): boolean {
+function evaluate(ast: Ast, issue: NormalizedIssue, now: number): boolean {
   for (const c of ast.clauses) {
-    if (!evalClause(c, issue)) return false;
+    if (!evalClause(c, issue, now)) return false;
   }
   return true;
 }
 
-function evalClause(c: Comparison, issue: NormalizedIssue): boolean {
+function evalClause(c: Comparison, issue: NormalizedIssue, now: number): boolean {
+  if (c.kind === "dateCompare") {
+    return evalDateCompare(c, issue, now);
+  }
   if (c.field === "labels") {
     return evalLabels(c, issue.labels);
   }
@@ -336,6 +428,65 @@ function evalClause(c: Comparison, issue: NormalizedIssue): boolean {
   }
 }
 
+/** Resolve a relative (`-4w`) or absolute (`2026-01-01`) date to epoch ms. */
+function resolveDateExpr(raw: string, now: number): number | null {
+  const rel = raw.match(/^([+-]?\d+)([wdhm])$/);
+  if (rel) {
+    const n = parseInt(rel[1], 10);
+    const unit = rel[2];
+    const ms =
+      unit === "w"
+        ? 7 * 86400000
+        : unit === "d"
+          ? 86400000
+          : unit === "h"
+            ? 3600000
+            : 60000;
+    return now + n * ms; // `-4w` → now − 4 weeks
+  }
+  const t = Date.parse(raw);
+  return Number.isFinite(t) ? t : null;
+}
+
+function evalDateCompare(
+  c: Extract<Comparison, { kind: "dateCompare" }>,
+  issue: NormalizedIssue,
+  now: number,
+): boolean {
+  const dateStr = readDateField(c.field, issue);
+  if (!dateStr) return false; // missing date can't satisfy a comparison
+  const actual = Date.parse(dateStr);
+  if (!Number.isFinite(actual)) return false;
+  const target = resolveDateExpr(c.raw, now);
+  if (target === null) return false;
+  switch (c.op) {
+    case ">":
+      return actual > target;
+    case ">=":
+      return actual >= target;
+    case "<":
+      return actual < target;
+    case "<=":
+      return actual <= target;
+    default:
+      return false;
+  }
+}
+
+function readDateField(field: Field, issue: NormalizedIssue): string | undefined {
+  switch (field) {
+    case "created":
+      return issue.created;
+    case "updated":
+      return issue.updated;
+    case "resolved":
+    case "resolutiondate":
+      return issue.resolved;
+    default:
+      return undefined;
+  }
+}
+
 function evalLabels(c: Comparison, labels: string[]): boolean {
   switch (c.kind) {
     case "eq":
@@ -350,6 +501,9 @@ function evalLabels(c: Comparison, labels: string[]): boolean {
       return labels.length === 0;
     case "isNotEmpty":
       return labels.length > 0;
+    default:
+      // labels never produces a dateCompare clause; unreachable.
+      return false;
   }
 }
 
@@ -369,5 +523,13 @@ function readField(field: Exclude<Field, "labels">, issue: NormalizedIssue): str
       // Mirror Jira's `resolution = Unresolved` semantics by exposing two
       // values: "Done" or "Unresolved".
       return issue.statusCategoryKey === "done" ? "Done" : "Unresolved";
+    case "created":
+      return issue.created;
+    case "updated":
+      return issue.updated;
+    case "resolved":
+    case "resolutiondate":
+      // Lets `resolved is [not] empty` work as an unresolved/resolved filter.
+      return issue.resolved;
   }
 }

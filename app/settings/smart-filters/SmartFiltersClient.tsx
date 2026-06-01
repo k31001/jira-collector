@@ -418,10 +418,15 @@ function ValueForm({
             <span>{parseResult.message}</span>
           </div>
         )}
-        <div className="text-[11px] text-muted-foreground">
-          지원: <code className="text-xs">status</code>, <code className="text-xs">assignee</code>, <code className="text-xs">reporter</code>, <code className="text-xs">priority</code>, <code className="text-xs">issuetype</code>, <code className="text-xs">labels</code>, <code className="text-xs">resolution</code> · 연산자{" "}
-          <code className="text-xs">= != in &quot;not in&quot; &quot;is empty&quot; &quot;is not empty&quot;</code> · 조합{" "}
-          <code className="text-xs">AND</code>
+        <div className="space-y-0.5 text-[11px] text-muted-foreground">
+          <div>
+            텍스트 필드: <code className="text-xs">status</code>, <code className="text-xs">assignee</code>, <code className="text-xs">reporter</code>, <code className="text-xs">priority</code>, <code className="text-xs">issuetype</code>, <code className="text-xs">labels</code>, <code className="text-xs">resolution</code> · 연산자{" "}
+            <code className="text-xs">= != in &quot;not in&quot; &quot;is empty&quot; &quot;is not empty&quot;</code>
+          </div>
+          <div>
+            날짜 필드: <code className="text-xs">created</code>, <code className="text-xs">updated</code>, <code className="text-xs">resolved</code> · 연산자 <code className="text-xs">&gt; &gt;= &lt; &lt;=</code> · 값 <code className="text-xs">-4w</code> <code className="text-xs">-7d</code> <code className="text-xs">-2h</code> <code className="text-xs">-30m</code> 또는 <code className="text-xs">2026-01-01</code>
+          </div>
+          <div>조합 <code className="text-xs">AND</code></div>
         </div>
       </div>
       <div className="flex justify-end gap-2">

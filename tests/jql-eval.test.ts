@@ -109,3 +109,80 @@ test("tryCompileJql returns null on invalid input", () => {
   assert.equal(tryCompileJql(""), null);
   assert.notEqual(tryCompileJql("priority = High"), null);
 });
+
+/* ------------------------------ date fields ------------------------------ */
+
+test("relative date: created > -4w", () => {
+  const now = Date.parse("2026-06-02T00:00:00Z");
+  const fn = compileJql("created > -4w", now);
+  // created 2 weeks ago → within last 4 weeks → true
+  assert.equal(
+    fn(issue({ created: "2026-05-19T00:00:00Z" })),
+    true,
+  );
+  // created 6 weeks ago → older than 4 weeks → false
+  assert.equal(
+    fn(issue({ created: "2026-04-20T00:00:00Z" })),
+    false,
+  );
+});
+
+test("relative date units d/h/m", () => {
+  const now = Date.parse("2026-06-02T12:00:00Z");
+  assert.equal(
+    compileJql("created > -2d", now)(issue({ created: "2026-06-01T12:00:00Z" })),
+    true,
+  );
+  assert.equal(
+    compileJql("created > -3h", now)(issue({ created: "2026-06-02T10:00:00Z" })),
+    true,
+  );
+  assert.equal(
+    compileJql("created > -30m", now)(issue({ created: "2026-06-02T10:00:00Z" })),
+    false,
+  );
+});
+
+test("absolute date comparison", () => {
+  const fn = compileJql('created >= "2026-05-01"');
+  assert.equal(fn(issue({ created: "2026-05-10T00:00:00Z" })), true);
+  assert.equal(fn(issue({ created: "2026-04-10T00:00:00Z" })), false);
+});
+
+test("date field with AND and other clauses", () => {
+  const now = Date.parse("2026-06-02T00:00:00Z");
+  const fn = compileJql("issuetype = Bug AND created > -1w", now);
+  assert.equal(
+    fn(issue({ issueType: "Bug", created: "2026-05-30T00:00:00Z" })),
+    true,
+  );
+  assert.equal(
+    fn(issue({ issueType: "Bug", created: "2026-04-30T00:00:00Z" })),
+    false,
+  );
+  assert.equal(
+    fn(issue({ issueType: "Story", created: "2026-05-30T00:00:00Z" })),
+    false,
+  );
+});
+
+test("resolved is empty / is not empty", () => {
+  const open = compileJql("resolved is empty");
+  const done = compileJql("resolved is not empty");
+  assert.equal(open(issue({ resolved: undefined })), true);
+  assert.equal(open(issue({ resolved: "2026-05-01T00:00:00Z" })), false);
+  assert.equal(done(issue({ resolved: "2026-05-01T00:00:00Z" })), true);
+});
+
+test("date comparison on a missing date is false", () => {
+  const now = Date.parse("2026-06-02T00:00:00Z");
+  assert.equal(
+    compileJql("resolved > -4w", now)(issue({ resolved: undefined })),
+    false,
+  );
+});
+
+test("relational operators rejected on text fields", () => {
+  assert.throws(() => parseJql("priority > High"), JqlParseError);
+  assert.equal(tryCompileJql("status < Done"), null);
+});
