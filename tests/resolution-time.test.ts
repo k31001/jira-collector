@@ -19,6 +19,8 @@ import {
   withResolutionHours,
   flattenAgingWithSource,
   partitionResolvedByPeriod,
+  buildBugRateSeries,
+  isBugType,
   type ResolvedIssue,
 } from "@/lib/resolution-time";
 import type { NormalizedIssue } from "@/lib/jira/types";
@@ -187,6 +189,32 @@ test("partitionResolvedByPeriod splits current vs previous window", () => {
     previous.map((i) => i.key),
     ["PREV1"],
   );
+});
+
+/* ------------------------------ bug rate --------------------------------- */
+
+test("isBugType matches common bug/defect type names", () => {
+  assert.equal(isBugType("Bug"), true);
+  assert.equal(isBugType("Sub-bug"), true);
+  assert.equal(isBugType("Defect"), true);
+  assert.equal(isBugType("버그"), true);
+  assert.equal(isBugType("Story"), false);
+  assert.equal(isBugType(undefined), false);
+});
+
+test("buildBugRateSeries computes per-bucket bug ratio by created date", () => {
+  const now = new Date("2026-05-31T00:00:00Z");
+  const issues: NormalizedIssue[] = [
+    makeIssue({ key: "B1", issueType: "Bug", created: "2026-05-30T00:00:00Z" }),
+    makeIssue({ key: "S1", issueType: "Story", created: "2026-05-30T00:00:00Z" }),
+    makeIssue({ key: "T1", issueType: "Task", created: "2026-05-30T00:00:00Z" }),
+  ];
+  const series = buildBugRateSeries(issues, 7, "day", now);
+  const day30 = series.find((p) => p.date === "2026-05-30");
+  assert.ok(day30);
+  assert.equal(day30!.total, 3);
+  assert.equal(day30!.bugs, 1);
+  assert.ok(Math.abs(day30!.ratio - 1 / 3) < 1e-9);
 });
 
 /* ----------------------------- histogram --------------------------------- */

@@ -337,6 +337,79 @@ export function buildUnresolvedTimeSeries(
   });
 }
 
+export type BugRatePoint = {
+  /** ISO date for the bucket start (yyyy-mm-dd) */
+  date: string;
+  label: string;
+  /** Issues created in this bucket. */
+  total: number;
+  /** Of those, how many were bug-type. */
+  bugs: number;
+  /** bugs / total in 0..1; 0 when total is 0. */
+  ratio: number;
+};
+
+/** True when an issue type looks like a bug/defect (locale-tolerant). */
+export function isBugType(issueType: string | undefined | null): boolean {
+  if (!issueType) return false;
+  const t = issueType.toLowerCase();
+  return (
+    t.includes("bug") ||
+    t.includes("defect") ||
+    issueType.includes("버그") ||
+    issueType.includes("결함") ||
+    issueType.includes("장애")
+  );
+}
+
+/**
+ * Per-bucket share of newly-created issues that are bugs. Bucketed by the
+ * `created` date (incoming bug rate) — a rising line means a growing fraction
+ * of incoming work is defects, a quality signal worth watching.
+ */
+export function buildBugRateSeries(
+  issues: NormalizedIssue[],
+  windowDays: number,
+  bucket: TimeBucket,
+  now: Date = new Date(),
+): BugRatePoint[] {
+  const end = bucketStart(now, bucket);
+  const startBoundary = new Date(end);
+  startBoundary.setDate(startBoundary.getDate() - windowDays + 1);
+  const start = bucketStart(startBoundary, bucket);
+
+  const buckets: BugRatePoint[] = [];
+  const indexByKey = new Map<string, number>();
+  let cursor = new Date(start);
+  while (cursor <= end) {
+    indexByKey.set(isoDate(cursor), buckets.length);
+    buckets.push({
+      date: isoDate(cursor),
+      label: bucketLabel(cursor, bucket),
+      total: 0,
+      bugs: 0,
+      ratio: 0,
+    });
+    cursor = advance(cursor, bucket);
+  }
+
+  for (const issue of issues) {
+    if (!issue.created) continue;
+    const c = new Date(issue.created);
+    if (Number.isNaN(c.getTime())) continue;
+    const key = isoDate(bucketStart(c, bucket));
+    const idx = indexByKey.get(key);
+    if (idx === undefined) continue;
+    buckets[idx].total += 1;
+    if (isBugType(issue.issueType)) buckets[idx].bugs += 1;
+  }
+
+  for (const b of buckets) {
+    b.ratio = b.total > 0 ? b.bugs / b.total : 0;
+  }
+  return buckets;
+}
+
 /**
  * Map a calendar date to the matching bucket label in the given time series.
  * Returns null if the date falls outside the series window.

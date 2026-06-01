@@ -8,6 +8,16 @@
 
 (다음 릴리스에 포함될 변경 사항)
 
+- 버그 재오픈(reopen) 횟수 추이 — Jira changelog의 status 역방향 전이를 세야 해서 상태별 체류 시간(v1.12.0)의 changelog 경로 위에 lazy로 얹는 게 자연스러움. 후속 작업으로 남김.
+
+---
+
+## [1.15.0] — 2026-06-01
+
+### Added
+- **버그 유입 비율 추이** — Resolution Time 대시보드에 기간별로 "생성된 이슈 중 버그/결함 비중"을 그리는 라인 차트 추가(생성일 기준 버킷). 선이 올라가면 들어오는 작업 중 결함 비율이 커진다는 품질 신호로, cycle time과 함께 보면 속도-품질 균형을 판단할 수 있습니다. 버그 타입 판별은 `bug`/`defect`/`버그`/`결함`/`장애`를 포괄. JQL 카드 토글(visibility) 반영, 추가 fetch 없음.
+- `lib/resolution-time.ts`에 `buildBugRateSeries`, `isBugType` 추가 (단위 테스트 2개).
+
 ---
 
 ## [1.14.0] — 2026-06-01
@@ -129,6 +139,7 @@
 ### Changed
 - **LongTailTable(오래 걸린 이슈 분석)에 10개 단위 페이지네이션** — 임계값 초과 이슈를 10개씩 분할 표시 (이전/다음 버튼 + `X/N 페이지` 카운터 + `총 N개 중 X–Y개 표시`). 임계값/소스/정렬 변경 시 페이지 자동 리셋. 현재 페이지만 렌더링하여 다수 이슈에서 체감 성능 개선.
 
+[1.15.0]: https://github.com/k31001/jira-collector/releases/tag/v1.15.0
 [1.14.0]: https://github.com/k31001/jira-collector/releases/tag/v1.14.0
 [1.13.0]: https://github.com/k31001/jira-collector/releases/tag/v1.13.0
 [1.12.0]: https://github.com/k31001/jira-collector/releases/tag/v1.12.0

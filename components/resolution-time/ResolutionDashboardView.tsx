@@ -55,6 +55,7 @@ import {
 } from "./TimeSeriesChart";
 import { UnresolvedTrendChart } from "./UnresolvedTrendChart";
 import { ThroughputScatterChart } from "./ThroughputScatterChart";
+import { BugRateChart } from "./BugRateChart";
 import {
   HistogramChart,
   type SourceHistogram,
@@ -482,6 +483,17 @@ export function ResolutionDashboardView({
           />
           <ThroughputScatterChart
             series={series}
+            bucket={timeBucket}
+            visible={visibleJqls}
+          />
+          <BugRateChart
+            perSource={visiblePerSource.map((ps) => ({
+              sourceId: ps.source.sourceId,
+              label: ps.source.label,
+              color: ps.source.color,
+              issues: ps.filteredIssues,
+            }))}
+            windowDays={windowDays}
             bucket={timeBucket}
             visible={visibleJqls}
           />
