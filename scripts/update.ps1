@@ -1,25 +1,24 @@
-# jira-collector — Windows PowerShell update script
+# jira-collector — Windows PowerShell update script (non-Docker)
 #
 # Pulls the latest commit from origin/<branch>, installs deps, runs DB
 # migrations, builds the Next.js bundle, restarts the service, and waits
-# for the app to come back up. Auto-detects the run mode:
+# for the app to come back up. Restart strategy is auto-detected:
 #
-#   1. docker-compose.yml present   → docker compose up -d --build
-#   2. pm2 command available        → pm2 restart jira-collector
-#   3. NSSM service "jira-collector" → Restart-Service jira-collector
-#   4. nothing detected             → print start hint and exit non-zero
+#   1. pm2 command available           → pm2 restart jira-collector
+#   2. Windows service "jira-collector" → Restart-Service jira-collector
+#   3. nothing detected                 → print start hint and exit non-zero
 #
 # Usage (from the repo root, or anywhere if JIRA_COLLECTOR_DIR is set):
-#   .\scripts\update.ps1                 # update main
-#   .\scripts\update.ps1 -Branch staging # update a different branch
+#   .\scripts\update.ps1                       # update main
+#   .\scripts\update.ps1 -Branch staging       # update a different branch
 #   $env:FORCE_UPDATE = "1"; .\scripts\update.ps1   # ignore dirty tree
 #
 # Environment overrides:
-#   JIRA_COLLECTOR_DIR    repo root (defaults to script's parent dir)
-#   JIRA_COLLECTOR_BRANCH branch to track (default: main)
-#   JIRA_COLLECTOR_PORT   port for the post-restart health check (default: 3000)
+#   JIRA_COLLECTOR_DIR     repo root (defaults to script's parent dir)
+#   JIRA_COLLECTOR_BRANCH  branch to track (default: main)
+#   JIRA_COLLECTOR_PORT    port for the post-restart health check (default: 3000)
 #   JIRA_COLLECTOR_SERVICE Windows service name (default: jira-collector)
-#   FORCE_UPDATE=1        proceed even with uncommitted local changes
+#   FORCE_UPDATE=1         proceed even with uncommitted local changes
 
 param(
     [string]$Branch
@@ -77,48 +76,39 @@ if ($prevSha -eq $newSha) {
 }
 Write-Info "$prevSha -> $newSha"
 
-# --- Restart strategy detection ---
-$useDocker = Test-Path (Join-Path $RepoDir "docker-compose.yml")
-$usePm2 = $false
-$useService = $false
-if (-not $useDocker) {
-    if (Get-Command "pm2" -ErrorAction SilentlyContinue) { $usePm2 = $true }
-    elseif (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) { $useService = $true }
-}
+# --- Build pipeline ---
+Write-Step "npm ci"
+npm ci
+if ($LASTEXITCODE -ne 0) { Write-Fail "npm ci failed"; exit 1 }
 
-# Docker mode: image rebuild handles `npm ci`, `db:migrate`, and `build`
-# inside the container, so we skip those steps on the host.
-if (-not $useDocker) {
-    Write-Step "npm ci"
-    npm ci
-    if ($LASTEXITCODE -ne 0) { Write-Fail "npm ci failed"; exit 1 }
+Write-Step "npm run db:migrate"
+npm run db:migrate
+if ($LASTEXITCODE -ne 0) { Write-Fail "db:migrate failed"; exit 1 }
 
-    Write-Step "npm run db:migrate"
-    npm run db:migrate
-    if ($LASTEXITCODE -ne 0) { Write-Fail "db:migrate failed"; exit 1 }
-
-    Write-Step "npm run build"
-    npm run build
-    if ($LASTEXITCODE -ne 0) { Write-Fail "build failed"; exit 1 }
-}
+Write-Step "npm run build"
+npm run build
+if ($LASTEXITCODE -ne 0) { Write-Fail "build failed"; exit 1 }
 
 # --- Restart ---
-if ($useDocker) {
-    Write-Step "docker compose up -d --build"
-    docker compose up -d --build
-    if ($LASTEXITCODE -ne 0) { Write-Fail "docker compose up failed"; exit 1 }
-} elseif ($usePm2) {
+$usePm2 = [bool](Get-Command "pm2" -ErrorAction SilentlyContinue)
+$service = if (-not $usePm2) { Get-Service -Name $ServiceName -ErrorAction SilentlyContinue } else { $null }
+
+if ($usePm2) {
     Write-Step "pm2 restart jira-collector"
     pm2 restart jira-collector --update-env
     if ($LASTEXITCODE -ne 0) { Write-Fail "pm2 restart failed"; exit 1 }
-} elseif ($useService) {
+} elseif ($service) {
     Write-Step "Restart-Service $ServiceName"
     Restart-Service -Name $ServiceName
 } else {
-    Write-Warn "No service manager detected (no docker-compose.yml, no pm2, no service '$ServiceName')."
+    Write-Warn "No service manager detected (no pm2, no service '$ServiceName')."
     Write-Warn "Build is up to date, but you need to restart the app yourself."
-    Write-Warn "  npm start         # foreground (PORT=$Port)"
-    Write-Warn "  pm2 start npm --name jira-collector -- start"
+    Write-Warn "  npm start                                        # foreground (PORT=$Port)"
+    Write-Warn "  pm2 start npm --name jira-collector -- start     # background via PM2"
+    Write-Warn "Tip: register a Windows service with NSSM so future runs auto-detect it:"
+    Write-Warn "  nssm install $ServiceName ""C:\Program Files\nodejs\npm.cmd"" start"
+    Write-Warn "  nssm set $ServiceName AppDirectory $RepoDir"
+    Write-Warn "  nssm start $ServiceName"
     exit 1
 }
 

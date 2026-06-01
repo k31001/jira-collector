@@ -10,6 +10,13 @@
 
 ---
 
+## [1.10.1] — 2026-06-01
+
+### Changed
+- **`scripts/update.ps1` / `scripts/update.sh`**: Docker 자동 감지 분기 제거. 항상 `npm ci → db:migrate → build`로 호스트에서 빌드한 뒤 PM2 또는 (Windows) `Restart-Service` / (Linux) systemd로 재시작. 서비스 매니저가 없을 때 안내가 NSSM·systemd 유닛 등록 예시까지 포함하도록 보강.
+
+---
+
 ## [1.10.0] — 2026-06-01
 
 ### Added
@@ -88,6 +95,7 @@
 ### Changed
 - **LongTailTable(오래 걸린 이슈 분석)에 10개 단위 페이지네이션** — 임계값 초과 이슈를 10개씩 분할 표시 (이전/다음 버튼 + `X/N 페이지` 카운터 + `총 N개 중 X–Y개 표시`). 임계값/소스/정렬 변경 시 페이지 자동 리셋. 현재 페이지만 렌더링하여 다수 이슈에서 체감 성능 개선.
 
+[1.10.1]: https://github.com/k31001/jira-collector/releases/tag/v1.10.1
 [1.10.0]: https://github.com/k31001/jira-collector/releases/tag/v1.10.0
 [1.9.1]: https://github.com/k31001/jira-collector/releases/tag/v1.9.1
 [1.9.0]: https://github.com/k31001/jira-collector/releases/tag/v1.9.0

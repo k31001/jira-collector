@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
-# jira-collector — Ubuntu / Debian update script
+# jira-collector — Ubuntu / Debian update script (non-Docker)
 #
 # Pulls the latest commit from origin/<branch>, installs deps, runs DB
 # migrations, builds the Next.js bundle, restarts the service, and waits
-# for the app to come back up. Auto-detects the run mode:
+# for the app to come back up. Restart strategy is auto-detected:
 #
-#   1. docker-compose.yml present                → docker compose up -d --build
-#   2. pm2 command available                     → pm2 restart jira-collector
-#   3. systemd unit "jira-collector.service" up  → sudo systemctl restart …
-#   4. nothing detected                          → print start hint and exit 1
+#   1. pm2 command available                     → pm2 restart jira-collector
+#   2. systemd unit "jira-collector.service" up  → sudo systemctl restart …
+#   3. nothing detected                          → print start hint and exit 1
 #
 # Usage (from the repo root, or anywhere if JIRA_COLLECTOR_DIR is set):
 #   ./scripts/update.sh                  # update main
@@ -73,47 +72,47 @@ if [ "$PREV_SHA" = "$NEW_SHA" ]; then
 fi
 info "$PREV_SHA -> $NEW_SHA"
 
-# --- Restart strategy detection ---
-USE_DOCKER=0
+# --- Build pipeline ---
+step "npm ci"
+npm ci
+
+step "npm run db:migrate"
+npm run db:migrate
+
+step "npm run build"
+npm run build
+
+# --- Restart ---
 USE_PM2=0
 USE_SYSTEMD=0
-if [ -f docker-compose.yml ]; then
-    USE_DOCKER=1
-elif command -v pm2 >/dev/null 2>&1; then
+if command -v pm2 >/dev/null 2>&1; then
     USE_PM2=1
 elif systemctl list-unit-files "${SERVICE}.service" >/dev/null 2>&1 \
     && systemctl cat "${SERVICE}.service" >/dev/null 2>&1; then
     USE_SYSTEMD=1
 fi
 
-# Docker rebuild handles npm ci / migrate / build inside the image, so we
-# skip them on the host for that mode.
-if [ "$USE_DOCKER" = "0" ]; then
-    step "npm ci"
-    npm ci
-
-    step "npm run db:migrate"
-    npm run db:migrate
-
-    step "npm run build"
-    npm run build
-fi
-
-# --- Restart ---
-if [ "$USE_DOCKER" = "1" ]; then
-    step "docker compose up -d --build"
-    docker compose up -d --build
-elif [ "$USE_PM2" = "1" ]; then
+if [ "$USE_PM2" = "1" ]; then
     step "pm2 restart jira-collector"
     pm2 restart jira-collector --update-env
 elif [ "$USE_SYSTEMD" = "1" ]; then
     step "sudo systemctl restart ${SERVICE}.service"
     sudo systemctl restart "${SERVICE}.service"
 else
-    warn "No service manager detected (no docker-compose.yml, no pm2, no systemd unit '${SERVICE}.service')."
+    warn "No service manager detected (no pm2, no systemd unit '${SERVICE}.service')."
     warn "Build is up to date, but you need to restart the app yourself."
-    warn "  npm start                                 # foreground (PORT=${PORT})"
-    warn "  pm2 start npm --name jira-collector -- start"
+    warn "  npm start                                        # foreground (PORT=${PORT})"
+    warn "  pm2 start npm --name jira-collector -- start     # background via PM2"
+    warn "Tip: register a systemd unit so future runs auto-detect it:"
+    warn "  /etc/systemd/system/${SERVICE}.service:"
+    warn "      [Service]"
+    warn "      WorkingDirectory=${REPO_DIR}"
+    warn "      ExecStart=/usr/bin/npm start"
+    warn "      Environment=PORT=${PORT}"
+    warn "      Restart=always"
+    warn "      [Install]"
+    warn "      WantedBy=multi-user.target"
+    warn "  sudo systemctl daemon-reload && sudo systemctl enable --now ${SERVICE}.service"
     exit 1
 fi
 
