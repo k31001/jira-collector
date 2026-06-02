@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   compileJql,
+  extractCustomFieldIds,
   parseJql,
   tryCompileJql,
   JqlParseError,
@@ -259,4 +260,30 @@ test("missing custom field value fails comparison gracefully", () => {
     false,
   );
   assert.equal(compileJql('cf[10050] = "Windows"')(issue({})), false);
+});
+
+test("extractCustomFieldIds normalizes both cf[N] and customfield_N forms", () => {
+  assert.deepEqual(extractCustomFieldIds("cf[10016] >= 5"), [
+    "customfield_10016",
+  ]);
+  assert.deepEqual(extractCustomFieldIds("customfield_64512 = X"), [
+    "customfield_64512",
+  ]);
+  assert.deepEqual(extractCustomFieldIds("CF[10016] > 1"), [
+    "customfield_10016",
+  ]);
+});
+
+test("extractCustomFieldIds collects multiple ids and dedupes", () => {
+  assert.deepEqual(
+    extractCustomFieldIds(
+      'issuetype = Bug AND cf[10016] >= 5 AND customfield_10050 = "Win" AND cf[10016] < 20',
+    ).sort(),
+    ["customfield_10016", "customfield_10050"],
+  );
+});
+
+test("extractCustomFieldIds returns [] when no custom field is referenced", () => {
+  assert.deepEqual(extractCustomFieldIds("priority = High AND created > -4w"), []);
+  assert.deepEqual(extractCustomFieldIds(""), []);
 });

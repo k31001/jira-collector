@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HelpHint, HelpRow } from "@/components/help-hint";
+import { Switch } from "@/components/ui/switch";
 import {
   buildRatioSeries,
   type RatioBasis,
@@ -68,6 +69,10 @@ export function RatioAnalysisChart({
   const denomLabel = config.denominatorJql.trim() || "전체";
   const basisLabel = config.basis === "resolved" ? "해결일" : "생성일";
 
+  // Y-axis: auto-scales to the visible data range by default so small ratios
+  // (e.g. all under 8%) fill the chart; the toggle pins it back to 0–100%.
+  const [autoScale, setAutoScale] = React.useState(true);
+
   const perSourceSeries = React.useMemo(
     () =>
       perSource.map((s) => ({
@@ -115,9 +120,30 @@ export function RatioAnalysisChart({
     (s) => isVisible(s.sourceId) && s.points.some((p) => p.denominator > 0),
   );
 
+  // Domain from the visible (percent) values, rounded to nice multiples of 5
+  // with a little headroom. Keep a 0 baseline unless the data sits high, so
+  // most charts still read against zero; clamp within 0–100.
+  const yDomain = React.useMemo<[number, number]>(() => {
+    if (!autoScale) return [0, 100];
+    const vals: number[] = [];
+    for (const s of perSourceSeries) {
+      if (visible[s.sourceId] === false) continue;
+      for (const p of s.points) {
+        if (p.denominator > 0) vals.push(Math.round(p.ratio * 1000) / 10);
+      }
+    }
+    if (vals.length === 0) return [0, 100];
+    const max = Math.max(...vals);
+    const min = Math.min(...vals);
+    const pad = Math.max(2, (max - min) * 0.15);
+    const upper = Math.min(100, Math.ceil((max + pad) / 5) * 5);
+    const lower = min > 20 ? Math.max(0, Math.floor((min - pad) / 5) * 5) : 0;
+    return [lower, Math.max(upper, lower + 5)];
+  }, [autoScale, perSourceSeries, visible]);
+
   return (
     <Card>
-      <CardHeader className="pb-2">
+      <CardHeader className="pb-2 flex-row items-start justify-between gap-2 space-y-0">
         <CardTitle className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
           비율 분석 ({bucketLabel})
           <span className="rounded bg-muted px-1.5 py-0.5 text-xs font-normal">
@@ -141,6 +167,14 @@ export function RatioAnalysisChart({
             분자 {config.numeratorJql} / 분모 {denomLabel} · {basisLabel} 기준
           </span>
         </CardTitle>
+        <label className="flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap text-[11px] text-muted-foreground">
+          {autoScale ? "자동 스케일" : "0–100%"}
+          <Switch
+            checked={autoScale}
+            onCheckedChange={setAutoScale}
+            aria-label="Y축 자동 스케일"
+          />
+        </label>
       </CardHeader>
       <CardContent>
         <div className="h-[220px] w-full">
@@ -167,7 +201,8 @@ export function RatioAnalysisChart({
                 axisLine={false}
                 tickLine={false}
                 width={40}
-                domain={[0, 100]}
+                domain={yDomain}
+                allowDecimals={false}
                 tickFormatter={(v) => `${v}%`}
               />
               <Tooltip

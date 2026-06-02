@@ -6,7 +6,7 @@
 #
 #   1. pm2 command available           → pm2 restart jira-collector
 #   2. Windows service "jira-collector" → Restart-Service jira-collector
-#   3. nothing detected                 → print start hint and exit non-zero
+#   3. nothing detected                 → start in background (npm start)
 #
 # Usage (from the repo root, or anywhere if JIRA_COLLECTOR_DIR is set):
 #   .\scripts\update.ps1                       # update main
@@ -102,14 +102,29 @@ if ($usePm2) {
     Restart-Service -Name $ServiceName
 } else {
     Write-Warn "No service manager detected (no pm2, no service '$ServiceName')."
-    Write-Warn "Build is up to date, but you need to restart the app yourself."
-    Write-Warn "  npm start                                        # foreground (PORT=$Port)"
-    Write-Warn "  pm2 start npm --name jira-collector -- start     # background via PM2"
-    Write-Warn "Tip: register a Windows service with NSSM so future runs auto-detect it:"
-    Write-Warn "  nssm install $ServiceName ""C:\Program Files\nodejs\npm.cmd"" start"
-    Write-Warn "  nssm set $ServiceName AppDirectory $RepoDir"
-    Write-Warn "  nssm start $ServiceName"
-    exit 1
+    Write-Step "Starting the app in the background (npm start, PORT=$Port)"
+    # Free the port from an instance a previous run of this fallback started,
+    # so the fresh build takes over instead of colliding with a stale process.
+    try {
+        $conns = Get-NetTCPConnection -LocalPort ([int]$Port) -State Listen -ErrorAction SilentlyContinue
+        if ($conns) {
+            $procIds = $conns | Select-Object -ExpandProperty OwningProcess -Unique
+            foreach ($procId in $procIds) {
+                Write-Info "Stopping existing listener on :$Port (pid: $procId)"
+                Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+            }
+            Start-Sleep -Seconds 2
+        }
+    } catch {
+        Write-Warn "Could not check/stop an existing listener on :$Port. Free it manually if start fails."
+    }
+    $logOut = Join-Path $RepoDir "app.log"
+    $logErr = Join-Path $RepoDir "app.err.log"
+    Write-Info "Logs -> $logOut (stderr: $logErr)"
+    $env:PORT = $Port
+    Start-Process -FilePath "npm.cmd" -ArgumentList "start" -WorkingDirectory $RepoDir `
+        -RedirectStandardOutput $logOut -RedirectStandardError $logErr -WindowStyle Hidden
+    Write-Info "Tip: for an auto-restarting managed service, install pm2 or register a Windows service with NSSM."
 }
 
 # --- Health check ---

@@ -5,6 +5,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  LabelList,
   Legend,
   ResponsiveContainer,
   Tooltip,
@@ -31,6 +32,14 @@ export type SourceHistogram = {
 
 const ALL = "__all__";
 
+/** Per-bar percent label: show `12.5%` for positive shares, blank otherwise. */
+function formatPctLabel(
+  value: string | number | boolean | null | undefined,
+): string {
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) && n > 0 ? `${n}%` : "";
+}
+
 export function HistogramChart({
   histograms,
   onBinSelected,
@@ -52,11 +61,18 @@ export function HistogramChart({
       : (histograms.find((h) => h.sourceId === selectedSourceId)?.sourceId ??
         ALL);
 
-  // Build a single dataset where each row has a column per source so a
-  // stacked BarChart can render them together. The same shape works for the
-  // single-source view — we just render one Bar.
+  // Build a single dataset where each row (one per bin) has a count column and
+  // a `__pct` column per source, so a clustered BarChart can render every
+  // source's bar side by side. Percent is the bin's share of that source's
+  // resolved total — surfaced as a per-bar label and in the tooltip.
   const data = React.useMemo(() => {
     if (histograms.length === 0) return [];
+    const totals = new Map<string, number>(
+      histograms.map((h) => [
+        h.sourceId,
+        h.bins.reduce((sum, b) => sum + b.count, 0),
+      ]),
+    );
     const binCount = histograms[0].bins.length;
     const rows: Array<Record<string, number | string>> = [];
     for (let bIdx = 0; bIdx < binCount; bIdx++) {
@@ -65,7 +81,11 @@ export function HistogramChart({
         label: histograms[0].bins[bIdx]?.label ?? "",
       };
       for (const h of histograms) {
-        row[h.sourceId] = h.bins[bIdx]?.count ?? 0;
+        const count = h.bins[bIdx]?.count ?? 0;
+        const total = totals.get(h.sourceId) ?? 0;
+        row[h.sourceId] = count;
+        row[`${h.sourceId}__pct`] =
+          total > 0 ? Math.round((count / total) * 1000) / 10 : 0;
       }
       rows.push(row);
     }
@@ -98,7 +118,9 @@ export function HistogramChart({
           해결 시간 분포
           <HelpHint title="해결 시간 분포">
             <HelpRow label="값:">
-              해결된 이슈를 소요 시간 구간(예: 0–1일, 1–2일…)별로 센 것입니다.
+              해결된 이슈의 소요 시간 분포입니다. 막대 높이는 해당 JQL 내에서 그
+              구간이 차지하는 비율(%)이라, 건수가 다른 JQL끼리도 분포 모양을 바로
+              비교할 수 있습니다.
             </HelpRow>
             <HelpRow label="왼쪽에 몰림:">
               대부분 빨리 끝난다는 뜻으로 건강합니다. 오른쪽 꼬리가 길면 일부가
@@ -122,7 +144,7 @@ export function HistogramChart({
                 <SelectItem value={ALL}>
                   <span className="inline-flex items-center gap-2">
                     <span className="inline-block h-2.5 w-2.5 rounded-sm bg-gradient-to-r from-blue-500 to-emerald-500" />
-                    전체 (누적)
+                    전체 (비교)
                   </span>
                 </SelectItem>
                 {histograms.map((h) => (
@@ -144,8 +166,8 @@ export function HistogramChart({
       <CardContent>
         <p className="mb-2 text-[11px] text-muted-foreground">
           {effectiveSourceId === ALL
-            ? "스택 막대의 색상 구간을 클릭하면 해당 JQL의 이슈 목록이 표시됩니다."
-            : "막대를 클릭하면 해당 구간에 속한 이슈 목록이 표시됩니다."}
+            ? "Y축은 각 JQL 내 비중(%)으로 정규화해 건수가 달라도 분포를 바로 비교합니다. 막대를 클릭하면 해당 JQL·구간의 이슈 목록이 표시됩니다."
+            : "Y축은 해당 JQL 내 비중(%)입니다. 막대를 클릭하면 해당 구간에 속한 이슈 목록이 표시됩니다."}
         </p>
         <div className="h-[280px] w-full">
           <ResponsiveContainer width="100%" height="100%">
@@ -173,7 +195,8 @@ export function HistogramChart({
                 axisLine={false}
                 tickLine={false}
                 allowDecimals={false}
-                width={28}
+                width={46}
+                tickFormatter={(v) => `${v}%`}
               />
               <Tooltip
                 contentStyle={{
@@ -186,12 +209,16 @@ export function HistogramChart({
                   color: "var(--muted-foreground)",
                   fontSize: 11,
                 }}
-                formatter={(value, name) => {
+                formatter={(value, name, item) => {
                   const src = histograms.find((h) => h.sourceId === name);
-                  return [
-                    typeof value === "number" ? `${value}개` : "—",
-                    src?.label ?? String(name),
-                  ];
+                  // Bar height is the percent (dataKey `${id}__pct`); the raw
+                  // count still rides on the row under the bare source id.
+                  const count = item?.payload?.[String(name)];
+                  const countStr =
+                    typeof count === "number" ? `${count}개` : "—";
+                  const pctStr =
+                    typeof value === "number" ? ` · ${value}%` : "";
+                  return [`${countStr}${pctStr}`, src?.label ?? String(name)];
                 }}
               />
               {effectiveSourceId === ALL && histograms.length > 1 && (
@@ -208,8 +235,7 @@ export function HistogramChart({
               {visibleSources.map((h) => (
                 <Bar
                   key={h.sourceId}
-                  dataKey={h.sourceId}
-                  stackId="histogram"
+                  dataKey={`${h.sourceId}__pct`}
                   fill={h.color}
                   isAnimationActive={false}
                   onClick={(payload) => {
@@ -219,7 +245,16 @@ export function HistogramChart({
                   cursor="pointer"
                   radius={[3, 3, 0, 0]}
                   name={h.sourceId}
-                />
+                >
+                  <LabelList
+                    dataKey={`${h.sourceId}__pct`}
+                    position="top"
+                    formatter={formatPctLabel}
+                    fontSize={9}
+                    fill="currentColor"
+                    fillOpacity={0.55}
+                  />
+                </Bar>
               ))}
             </BarChart>
           </ResponsiveContainer>

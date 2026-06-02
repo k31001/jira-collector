@@ -421,6 +421,27 @@ export function tryCompileJql(
   }
 }
 
+const CUSTOM_FIELD_REF_RE = /cf\[(\d+)\]|customfield_(\d+)/gi;
+
+/**
+ * Scan a restricted-JQL string for the custom fields it references, in either
+ * `cf[NNNNN]` or `customfield_NNNNN` form, and return them normalized to
+ * `customfield_NNNNN` (deduped).
+ *
+ * Lets the resolution-time fetcher request only the custom fields actually
+ * referenced by ratio analysis / custom facets instead of pulling every field
+ * with `*all`. A purely textual scan (not a full parse) so a malformed
+ * expression still surfaces the field ids it mentions.
+ */
+export function extractCustomFieldIds(input: string): string[] {
+  const ids = new Set<string>();
+  for (const m of input.matchAll(CUSTOM_FIELD_REF_RE)) {
+    const num = m[1] ?? m[2];
+    if (num) ids.add(`customfield_${num}`);
+  }
+  return [...ids];
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Evaluator                                                                  */
 /* -------------------------------------------------------------------------- */

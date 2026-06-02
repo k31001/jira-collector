@@ -54,7 +54,7 @@ import {
   type Series,
 } from "./TimeSeriesChart";
 import { UnresolvedTrendChart } from "./UnresolvedTrendChart";
-import { ThroughputScatterChart } from "./ThroughputScatterChart";
+import { ThroughputTrendChart } from "./ThroughputTrendChart";
 import {
   RatioAnalysisChart,
   type CompiledRatioConfig,
@@ -474,6 +474,29 @@ export function ResolutionDashboardView({
             </Card>
           )}
 
+          {sources.some((s) => s.capped) && (
+            <Card className="border-amber-500/50 bg-amber-500/5">
+              <CardContent className="flex items-start gap-2 py-3 text-xs">
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                <div className="space-y-0.5">
+                  <p className="font-medium text-amber-700 dark:text-amber-500">
+                    분석 한도(2,000개)에 도달했습니다
+                  </p>
+                  <p className="text-muted-foreground">
+                    다음 JQL은 최신 2,000개 이슈만 분석됩니다:{" "}
+                    <span className="font-medium">
+                      {sources
+                        .filter((s) => s.capped)
+                        .map((s) => s.label)
+                        .join(", ")}
+                    </span>
+                    . 윈도를 좁히거나 JQL을 더 구체화하면 전체가 반영됩니다.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {sources.length > 0 && (
             <PerSourceFilters
               sources={sources}
@@ -508,7 +531,7 @@ export function ResolutionDashboardView({
             bucket={timeBucket}
             visible={visibleJqls}
           />
-          <ThroughputScatterChart
+          <ThroughputTrendChart
             series={series}
             bucket={timeBucket}
             visible={visibleJqls}

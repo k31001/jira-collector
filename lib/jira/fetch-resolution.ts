@@ -11,10 +11,22 @@ import {
   resolutionDashboardSources,
   jiraServers,
 } from "@/lib/db/schema";
-import { getServerConfig, getStatusContext } from "@/lib/db/queries";
+import {
+  getServerConfig,
+  getStatusContext,
+  listCustomFacetsWithValues,
+  listRatioConfigs,
+} from "@/lib/db/queries";
+import { extractCustomFieldIds } from "@/lib/jql-eval";
 import { JiraError, type NormalizedIssue } from "./types";
-import { searchIssues } from "./client";
+import { DEFAULT_FIELDS, searchIssues } from "./client";
 import { normalizeIssue } from "./normalize";
+
+/**
+ * Max issues analyzed per JQL source. A source that reaches this cap is
+ * flagged `capped` so the UI can advise narrowing the window / JQL.
+ */
+export const RESOLUTION_ISSUE_LIMIT = 2000;
 
 export type Milestone = { name: string; date: string };
 
@@ -27,8 +39,31 @@ export type ResolutionSourceResult = {
   jql: string;
   milestones: Milestone[];
   issues: NormalizedIssue[];
+  /** True when the fetch hit RESOLUTION_ISSUE_LIMIT (results may be partial). */
+  capped: boolean;
   error: string | null;
 };
+
+/**
+ * Custom fields (`customfield_NNNNN`) referenced anywhere the resolution
+ * dashboard evaluates restricted JQL client-side: ratio-analysis numerators /
+ * denominators and custom smart-filter facet values. These — plus the base
+ * `DEFAULT_FIELDS` — are the only fields the dashboard needs, so we request
+ * exactly them instead of `*all` to keep the search payload small.
+ */
+function referencedCustomFields(): string[] {
+  const ids = new Set<string>();
+  for (const rc of listRatioConfigs()) {
+    for (const id of extractCustomFieldIds(rc.numeratorJql)) ids.add(id);
+    for (const id of extractCustomFieldIds(rc.denominatorJql)) ids.add(id);
+  }
+  for (const facet of listCustomFacetsWithValues()) {
+    for (const v of facet.values) {
+      for (const id of extractCustomFieldIds(v.jql)) ids.add(id);
+    }
+  }
+  return [...ids];
+}
 
 export type ResolutionDashboardIssuesResult = {
   sources: ResolutionSourceResult[];
@@ -58,6 +93,11 @@ export async function fetchResolutionDashboardIssues(
   const serverRows = await db.select().from(jiraServers).all();
   const serverNameMap = new Map(serverRows.map((s) => [s.id, s.name]));
 
+  // Base fields + only the custom fields referenced by ratio analysis /
+  // custom facets, so cf[NNNNN] still resolves client-side without paying for
+  // every field (`*all`) on every issue.
+  const fields = [...DEFAULT_FIELDS, ...referencedCustomFields()];
+
   const results: ResolutionSourceResult[] = await Promise.all(
     sources.map(async (s) => {
       const serverName =
@@ -86,6 +126,7 @@ export async function fetchResolutionDashboardIssues(
         jql: s.jql,
         milestones,
         issues: [],
+        capped: false,
         error: null,
       };
       const serverConfig = getServerConfig(s.serverId);
@@ -93,15 +134,18 @@ export async function fetchResolutionDashboardIssues(
         return { ...base, error: "Jira 서버 설정을 찾을 수 없습니다" };
       }
       try {
-        // Request all fields (including custom fields) so the restricted JQL
-        // evaluator can reference cf[NNNNN] in smart filters / ratio analysis.
         const raws = await searchIssues(serverConfig, s.jql, {
-          fields: ["*all"],
+          fields,
+          limit: RESOLUTION_ISSUE_LIMIT,
         });
         const issues = raws.map((r) =>
           normalizeIssue(r, serverConfig, ctx, undefined),
         );
-        return { ...base, issues };
+        return {
+          ...base,
+          issues,
+          capped: raws.length >= RESOLUTION_ISSUE_LIMIT,
+        };
       } catch (err) {
         return { ...base, error: errorMessage(err) };
       }

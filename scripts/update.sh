@@ -7,7 +7,7 @@
 #
 #   1. pm2 command available                     → pm2 restart jira-collector
 #   2. systemd unit "jira-collector.service" up  → sudo systemctl restart …
-#   3. nothing detected                          → print start hint and exit 1
+#   3. nothing detected                          → start in background (nohup npm start)
 #
 # Usage (from the repo root, or anywhere if JIRA_COLLECTOR_DIR is set):
 #   ./scripts/update.sh                  # update main
@@ -100,20 +100,29 @@ elif [ "$USE_SYSTEMD" = "1" ]; then
     sudo systemctl restart "${SERVICE}.service"
 else
     warn "No service manager detected (no pm2, no systemd unit '${SERVICE}.service')."
-    warn "Build is up to date, but you need to restart the app yourself."
-    warn "  npm start                                        # foreground (PORT=${PORT})"
-    warn "  pm2 start npm --name jira-collector -- start     # background via PM2"
-    warn "Tip: register a systemd unit so future runs auto-detect it:"
-    warn "  /etc/systemd/system/${SERVICE}.service:"
-    warn "      [Service]"
-    warn "      WorkingDirectory=${REPO_DIR}"
-    warn "      ExecStart=/usr/bin/npm start"
-    warn "      Environment=PORT=${PORT}"
-    warn "      Restart=always"
-    warn "      [Install]"
-    warn "      WantedBy=multi-user.target"
-    warn "  sudo systemctl daemon-reload && sudo systemctl enable --now ${SERVICE}.service"
-    exit 1
+    step "Starting the app in the background (npm start, PORT=${PORT})"
+    # Free the port from an instance a previous run of this fallback started,
+    # so the fresh build takes over instead of colliding with / leaving a
+    # stale process serving the old bundle.
+    if command -v lsof >/dev/null 2>&1; then
+        OLD_PIDS="$(lsof -ti "tcp:${PORT}" -sTCP:LISTEN 2>/dev/null || true)"
+        if [ -n "$OLD_PIDS" ]; then
+            info "Stopping existing listener on :${PORT} (pids: ${OLD_PIDS//$'\n'/ })"
+            # shellcheck disable=SC2086
+            kill $OLD_PIDS 2>/dev/null || true
+            sleep 2
+        fi
+    elif command -v fuser >/dev/null 2>&1; then
+        fuser -k "${PORT}/tcp" >/dev/null 2>&1 || true
+        sleep 2
+    else
+        warn "Neither lsof nor fuser found; cannot stop a previous instance — free port ${PORT} manually if start fails."
+    fi
+    LOG_FILE="${REPO_DIR}/app.log"
+    info "Logs → ${LOG_FILE}"
+    PORT="${PORT}" nohup npm start >"${LOG_FILE}" 2>&1 &
+    disown 2>/dev/null || true
+    info "Tip: for an auto-restarting managed service, install pm2 ('pm2 start npm --name ${SERVICE} -- start') or register a systemd unit (WorkingDirectory=${REPO_DIR}, ExecStart=/usr/bin/npm start, Environment=PORT=${PORT})."
 fi
 
 # --- Health check ---
