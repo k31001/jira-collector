@@ -19,7 +19,11 @@ import {
 } from "@/lib/db/queries";
 import { extractCustomFieldIds } from "@/lib/jql-eval";
 import { JiraError, type NormalizedIssue } from "./types";
-import { DEFAULT_FIELDS, countIssues, searchIssues } from "./client";
+import {
+  DEFAULT_FIELDS_NO_COMMENT,
+  countIssues,
+  searchIssues,
+} from "./client";
 import { normalizeIssue } from "./normalize";
 
 /**
@@ -112,10 +116,11 @@ export async function fetchResolutionDashboardIssues(
   const serverRows = await db.select().from(jiraServers).all();
   const serverNameMap = new Map(serverRows.map((s) => [s.id, s.name]));
 
-  // Base fields + only the custom fields referenced by ratio analysis /
-  // custom facets, so cf[NNNNN] still resolves client-side without paying for
-  // every field (`*all`) on every issue.
-  const fields = [...DEFAULT_FIELDS, ...referencedCustomFields()];
+  // Base fields (minus `comment`) + only the custom fields referenced by ratio
+  // analysis / custom facets. Comments are the heaviest field and are only used
+  // by the slow-issue table, which loads them lazily per visible row — so we
+  // omit them here and keep cf[NNNNN] working without paying for `*all`.
+  const fields = [...DEFAULT_FIELDS_NO_COMMENT, ...referencedCustomFields()];
 
   // Resolve each source's server config once — shared by the count + fetch.
   const cfgById = new Map(sources.map((s) => [s.id, getServerConfig(s.serverId)]));

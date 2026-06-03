@@ -8,6 +8,7 @@ import {
   Copy,
   ExternalLink,
   Filter,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -63,6 +64,27 @@ const PRIORITY_RANK: Record<string, number> = {
   Low: 2,
   Lowest: 1,
 };
+
+/** Latest comment shape (same as NormalizedIssue.latestComment / the API). */
+type LazyComment = { author?: string; body: string; created: string };
+
+const commentKey = (i: { serverId: string; key: string }) =>
+  `${i.serverId}::${i.key}`;
+
+/** Merge a fetched comment map into the cache; requested-but-absent → null. */
+function mergeFetched(
+  prev: Record<string, LazyComment | null>,
+  fetched: Record<string, LazyComment | null>,
+  requested: Array<{ serverId: string; key: string }>,
+): Record<string, LazyComment | null> {
+  const next = { ...prev };
+  for (const k of Object.keys(fetched)) next[k] = fetched[k];
+  for (const r of requested) {
+    const k = `${r.serverId}::${r.key}`;
+    if (!(k in next)) next[k] = null;
+  }
+  return next;
+}
 
 export function LongTailTable({
   dashboardId,
@@ -164,10 +186,70 @@ export function LongTailTable({
     [slowIssues, pageStart, pageEnd],
   );
 
-  function copyMarkdown() {
+  // Comments are omitted from the bulk issue search (they're the heaviest
+  // field) and fetched lazily per visible row here. `undefined` = not yet
+  // fetched (spinner), `null` = fetched, none present.
+  const [lazyComments, setLazyComments] = React.useState<
+    Record<string, LazyComment | null>
+  >({});
+
+  const fetchComments = React.useCallback(
+    async (reqs: Array<{ serverId: string; key: string }>) => {
+      if (reqs.length === 0) return {} as Record<string, LazyComment | null>;
+      const res = await fetch(`/api/resolution-time/${dashboardId}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requests: reqs }),
+      });
+      if (!res.ok) return {} as Record<string, LazyComment | null>;
+      const json = (await res.json()) as {
+        comments: Record<string, LazyComment | null>;
+      };
+      return json.comments;
+    },
+    [dashboardId],
+  );
+
+  // Fetch comments for the currently visible page (signature avoids re-running
+  // when unrelated state changes).
+  const visibleSig = pagedIssues.map((i) => commentKey(i)).join("|");
+  React.useEffect(() => {
+    const missing = pagedIssues
+      .filter((i) => !i.latestComment && !(commentKey(i) in lazyComments))
+      .map((i) => ({ serverId: i.serverId, key: i.key }));
+    if (missing.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const fetched = await fetchComments(missing);
+      if (!cancelled) {
+        setLazyComments((prev) => mergeFetched(prev, fetched, missing));
+      }
+    })().catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleSig, fetchComments]);
+
+  async function copyMarkdown() {
     if (slowIssues.length === 0) {
       toast.info("복사할 이슈가 없습니다");
       return;
+    }
+    // Comments load lazily per visible row; make sure every slow issue's
+    // comment is fetched before building the export (only the missing ones).
+    let comments: Record<string, LazyComment | null> = lazyComments;
+    const missing = slowIssues
+      .filter((i) => !i.latestComment && !(commentKey(i) in lazyComments))
+      .map((i) => ({ serverId: i.serverId, key: i.key }));
+    if (missing.length > 0) {
+      const toastId = toast.loading(`코멘트 ${missing.length}개 불러오는 중…`);
+      try {
+        const fetched = await fetchComments(missing);
+        setLazyComments((prev) => mergeFetched(prev, fetched, missing));
+        comments = mergeFetched(lazyComments, fetched, missing);
+      } catch {}
+      toast.dismiss(toastId);
     }
     const lines: string[] = [];
     lines.push(`# 슬로우 이슈 분석 (>${thresholdDays}일)`);
@@ -208,9 +290,8 @@ export function LongTailTable({
     );
     for (const i of slowIssues) {
       const factor = slowFactor(i.resolutionHours, populationMedian);
-      const comment = i.latestComment?.body
-        ? truncate(stripHtml(i.latestComment.body), 80)
-        : "";
+      const raw = i.latestComment ?? comments[commentKey(i)];
+      const comment = raw?.body ? truncate(stripHtml(raw.body), 80) : "";
       lines.push(
         `| [${i.key}](${i.url}) | ${i.sourceLabel} | ${escapeMd(i.summary)} | ${i.effectiveStatus.label} | ${i.assignee?.name ?? "미할당"} | ${i.priority ?? "—"} | ${formatHours(i.resolutionHours)} | ${factor.toFixed(1)}x | ${escapeMd(comment)} | ${formatDate(i.resolved)} |`,
       );
@@ -366,7 +447,9 @@ export function LongTailTable({
                       i.resolutionHours,
                       populationMedian,
                     );
-                    const comment = i.latestComment;
+                    const cKey = commentKey(i);
+                    const comment = i.latestComment ?? lazyComments[cKey];
+                    const commentLoading = comment === undefined;
                     return (
                       <tr
                         key={`${i.serverId}::${i.key}`}
@@ -460,6 +543,8 @@ export function LongTailTable({
                                 {comment.author ?? "익명"}
                               </div>
                             </div>
+                          ) : commentLoading ? (
+                            <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
                           ) : (
                             <span className="text-[10px] text-muted-foreground">
                               —

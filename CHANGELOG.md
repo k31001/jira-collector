@@ -12,6 +12,15 @@
 
 ---
 
+## [1.21.1] — 2026-06-03
+
+### Changed
+- **해결 시간 대시보드 fetch 경량화 — 댓글 lazy 로드** — 이슈 일괄 조회에서 가장 무거운 `comment` 필드를 제외(`DEFAULT_FIELDS_NO_COMMENT` + 참조 커스텀 필드)하고, '오래 걸린 이슈' 표가 **보이는 행의 최신 댓글만** 필요할 때 per-row로 지연 로드합니다(일반 대시보드와 동일 패턴). 검색 페이로드가 줄어 로딩이 빨라집니다 — 댓글이 길고 많은 인스턴스일수록 효과가 큽니다.
+  - 배치 댓글 로직을 `lib/jira/comments-batch.ts`(`fetchLatestComments`)로 추출해 이슈/해결시간 대시보드가 공유. 신규 `POST /api/resolution-time/[id]/comments` 라우트 추가.
+  - `LongTailTable`이 보이는 페이지의 댓글을 지연 조회(미로딩=스피너, 없음=—), Markdown 복사 시 누락 댓글을 on-demand로 채웁니다.
+
+---
+
 ## [1.21.0] — 2026-06-03
 
 ### Added

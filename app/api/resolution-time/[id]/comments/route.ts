@@ -9,9 +9,9 @@ export const dynamic = "force-dynamic";
 type Body = { requests: CommentRequest[] };
 
 /**
- * Batch-fetch the latest comment for a list of (serverId, key) tuples. The
- * dashboard id is not used — the batch is keyed purely by serverId + key (see
- * `fetchLatestComments`).
+ * Latest comments for the resolution-time dashboard's slow-issue table, fetched
+ * lazily per visible row so the bulk issue search can omit the heavy `comment`
+ * field. Keyed by serverId + key, so it spans the dashboard's multiple sources.
  */
 export async function POST(req: Request) {
   let body: Body;
