@@ -89,7 +89,7 @@ type StreamEvent =
   | { type: "plan"; planned: number; perSource: ResolutionPlanItem[] }
   | { type: "progress"; fetched: number }
   | { type: "source"; index: number; data: ResolutionSourceResult }
-  | { type: "result"; data: ResolutionDashboardIssuesResult }
+  | { type: "done"; fetchedAt: number }
   | { type: "error"; message: string };
 
 const WINDOW_OPTIONS = [
@@ -315,11 +315,14 @@ export function ResolutionDashboardView({
       });
       if (!res.ok || !res.body) throw new Error("이슈 fetch 실패");
 
-      // The route streams NDJSON: plan → progress* → result (or error).
+      // The route streams NDJSON: plan/progress*, a `source` per source, then
+      // `done`. We rebuild the full result from the source events (issues are
+      // sent once, not again in a final payload).
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buf = "";
-      let result: ResolutionDashboardIssuesResult | null = null;
+      const collected: (ResolutionSourceResult | undefined)[] = [];
+      let fetchedAt: number | null = null;
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -341,20 +344,26 @@ export function ResolutionDashboardView({
             setLoadProgress((p) => (p ? { ...p, fetched: ev.fetched } : p));
           } else if (ev.type === "source") {
             const { index, data } = ev;
+            collected[index] = data;
             setStreamingSources((prev) => {
               const next = prev.slice();
               next[index] = data;
               return next;
             });
-          } else if (ev.type === "result") {
-            result = ev.data;
+          } else if (ev.type === "done") {
+            fetchedAt = ev.fetchedAt;
           } else if (ev.type === "error") {
             throw new Error(ev.message);
           }
         }
       }
-      if (!result) throw new Error("이슈 데이터를 받지 못했습니다");
-      return result;
+      if (fetchedAt === null) throw new Error("이슈 데이터를 받지 못했습니다");
+      return {
+        sources: collected.filter(
+          (s): s is ResolutionSourceResult => s !== undefined,
+        ),
+        fetchedAt,
+      };
     },
     refetchInterval: refreshIntervalSec > 0 ? refreshIntervalSec * 1000 : false,
     staleTime: refreshIntervalSec * 1000,
