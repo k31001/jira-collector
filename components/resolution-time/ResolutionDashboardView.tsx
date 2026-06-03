@@ -43,6 +43,7 @@ import { tryCompileJql } from "@/lib/jql-eval";
 import type { CustomFacetWithValues, RatioConfigDef } from "@/lib/db/queries";
 import type {
   ResolutionDashboardIssuesResult,
+  ResolutionPlanItem,
   ResolutionSourceResult,
 } from "@/lib/jira/fetch-resolution";
 import { formatRelative } from "@/lib/utils";
@@ -63,6 +64,7 @@ import {
   HistogramChart,
   type SourceHistogram,
 } from "./HistogramChart";
+import { LoadProgress, type LoadProgressState } from "./LoadProgress";
 import {
   IssueListDialog,
   type IssueListSelection,
@@ -81,6 +83,13 @@ type Props = {
   customFacets: CustomFacetWithValues[];
   ratioConfigs: RatioConfigDef[];
 };
+
+/** NDJSON events streamed by the issues route while a cold load runs. */
+type StreamEvent =
+  | { type: "plan"; planned: number; perSource: ResolutionPlanItem[] }
+  | { type: "progress"; fetched: number }
+  | { type: "result"; data: ResolutionDashboardIssuesResult }
+  | { type: "error"; message: string };
 
 const WINDOW_OPTIONS = [
   { value: 30, label: "최근 30일" },
@@ -256,6 +265,9 @@ export function ResolutionDashboardView({
     null,
   );
 
+  const [loadProgress, setLoadProgress] =
+    React.useState<LoadProgressState | null>(null);
+
   // Persist filters to localStorage
   React.useEffect(() => {
     try {
@@ -289,11 +301,45 @@ export function ResolutionDashboardView({
   const query = useQuery<ResolutionDashboardIssuesResult>({
     queryKey: ["resolution-issues", dashboardId],
     queryFn: async () => {
+      setLoadProgress({ fetched: 0, planned: null, startedAt: Date.now() });
       const res = await fetch(`/api/resolution-time/${dashboardId}/issues`, {
         cache: "no-store",
       });
-      if (!res.ok) throw new Error("이슈 fetch 실패");
-      return (await res.json()) as ResolutionDashboardIssuesResult;
+      if (!res.ok || !res.body) throw new Error("이슈 fetch 실패");
+
+      // The route streams NDJSON: plan → progress* → result (or error).
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let result: ResolutionDashboardIssuesResult | null = null;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let nl: number;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (!line) continue;
+          let ev: StreamEvent;
+          try {
+            ev = JSON.parse(line) as StreamEvent;
+          } catch {
+            continue;
+          }
+          if (ev.type === "plan") {
+            setLoadProgress((p) => (p ? { ...p, planned: ev.planned } : p));
+          } else if (ev.type === "progress") {
+            setLoadProgress((p) => (p ? { ...p, fetched: ev.fetched } : p));
+          } else if (ev.type === "result") {
+            result = ev.data;
+          } else if (ev.type === "error") {
+            throw new Error(ev.message);
+          }
+        }
+      }
+      if (!result) throw new Error("이슈 데이터를 받지 못했습니다");
+      return result;
     },
     refetchInterval: refreshIntervalSec > 0 ? refreshIntervalSec * 1000 : false,
     staleTime: refreshIntervalSec * 1000,
@@ -435,6 +481,17 @@ export function ResolutionDashboardView({
         onRefresh={() => query.refetch()}
       />
 
+      {query.isFetching &&
+        !query.isLoading &&
+        loadProgress &&
+        (loadProgress.planned !== null || loadProgress.fetched > 0) && (
+          <Card>
+            <CardContent className="py-3">
+              <LoadProgress {...loadProgress} />
+            </CardContent>
+          </Card>
+        )}
+
       {query.isError ? (
         <Card>
           <CardContent className="py-8 text-center text-sm text-destructive">
@@ -443,8 +500,14 @@ export function ResolutionDashboardView({
         </Card>
       ) : query.isLoading ? (
         <Card>
-          <CardContent className="py-8 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> 이슈 불러오는 중…
+          <CardContent className="py-10">
+            {loadProgress ? (
+              <LoadProgress {...loadProgress} />
+            ) : (
+              <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> 이슈 불러오는 중…
+              </div>
+            )}
           </CardContent>
         </Card>
       ) : (

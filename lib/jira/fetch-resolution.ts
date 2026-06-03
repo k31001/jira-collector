@@ -19,7 +19,7 @@ import {
 } from "@/lib/db/queries";
 import { extractCustomFieldIds } from "@/lib/jql-eval";
 import { JiraError, type NormalizedIssue } from "./types";
-import { DEFAULT_FIELDS, searchIssues } from "./client";
+import { DEFAULT_FIELDS, countIssues, searchIssues } from "./client";
 import { normalizeIssue } from "./normalize";
 
 /**
@@ -70,8 +70,27 @@ export type ResolutionDashboardIssuesResult = {
   fetchedAt: number;
 };
 
+export type ResolutionPlanItem = {
+  sourceId: string;
+  label: string;
+  /** Estimated issues to fetch for this source (min(count, cap)). */
+  planned: number;
+};
+
+/**
+ * Progress hooks so a streaming caller can report load progress to the client.
+ * - `onPlan` fires once the per-source approximate counts are known (lets the
+ *   UI switch from indeterminate to a determinate bar).
+ * - `onProgress` fires after each fetched page with the cumulative issue count.
+ */
+export type ResolutionFetchProgress = {
+  onPlan?: (plannedTotal: number, perSource: ResolutionPlanItem[]) => void;
+  onProgress?: (fetched: number) => void;
+};
+
 export async function fetchResolutionDashboardIssues(
   dashboardId: string,
+  progress?: ResolutionFetchProgress,
 ): Promise<ResolutionDashboardIssuesResult> {
   const dash = db
     .select()
@@ -97,6 +116,48 @@ export async function fetchResolutionDashboardIssues(
   // custom facets, so cf[NNNNN] still resolves client-side without paying for
   // every field (`*all`) on every issue.
   const fields = [...DEFAULT_FIELDS, ...referencedCustomFields()];
+
+  // Resolve each source's server config once — shared by the count + fetch.
+  const cfgById = new Map(sources.map((s) => [s.id, getServerConfig(s.serverId)]));
+
+  // Accumulate issues fetched across all sources. JS is single-threaded so the
+  // page callbacks never overlap; `+=` is race-free.
+  let fetchedTotal = 0;
+  const bumpFetched = (n: number) => {
+    fetchedTotal += n;
+    progress?.onProgress?.(fetchedTotal);
+  };
+
+  // Estimate the work upfront via approximate-count so the client can show a
+  // determinate bar. Runs concurrently with the fetches below (doesn't delay
+  // first byte) and emits `plan` as soon as the counts land. A failed count
+  // falls back to the per-source cap.
+  const planPromise: Promise<void> = progress?.onPlan
+    ? (async () => {
+        const perSource = await Promise.all(
+          sources.map(async (s): Promise<ResolutionPlanItem> => {
+            const cfg = cfgById.get(s.id);
+            if (!cfg) return { sourceId: s.id, label: s.label, planned: 0 };
+            try {
+              const c = await countIssues(cfg, s.jql);
+              return {
+                sourceId: s.id,
+                label: s.label,
+                planned: Math.min(c, RESOLUTION_ISSUE_LIMIT),
+              };
+            } catch {
+              return {
+                sourceId: s.id,
+                label: s.label,
+                planned: RESOLUTION_ISSUE_LIMIT,
+              };
+            }
+          }),
+        );
+        const total = perSource.reduce((sum, p) => sum + p.planned, 0);
+        progress.onPlan?.(total, perSource);
+      })()
+    : Promise.resolve();
 
   const results: ResolutionSourceResult[] = await Promise.all(
     sources.map(async (s) => {
@@ -129,7 +190,7 @@ export async function fetchResolutionDashboardIssues(
         capped: false,
         error: null,
       };
-      const serverConfig = getServerConfig(s.serverId);
+      const serverConfig = cfgById.get(s.id);
       if (!serverConfig) {
         return { ...base, error: "Jira 서버 설정을 찾을 수 없습니다" };
       }
@@ -137,6 +198,7 @@ export async function fetchResolutionDashboardIssues(
         const raws = await searchIssues(serverConfig, s.jql, {
           fields,
           limit: RESOLUTION_ISSUE_LIMIT,
+          onPage: bumpFetched,
         });
         const issues = raws.map((r) =>
           normalizeIssue(r, serverConfig, ctx, undefined),
@@ -151,6 +213,10 @@ export async function fetchResolutionDashboardIssues(
       }
     }),
   );
+
+  // Ensure the `plan` event was emitted (counts usually finish well before the
+  // fetches; this just guarantees it fired before we return the result).
+  await planPromise;
 
   return { sources: results, fetchedAt: Date.now() };
 }

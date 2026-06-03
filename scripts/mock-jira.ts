@@ -786,6 +786,22 @@ function jsonResponse(res: http.ServerResponse, status: number, body: unknown) {
   res.end(JSON.stringify(body));
 }
 
+/**
+ * Artificial latency (dev/demo only). Set `MOCK_JIRA_DELAY_MS` to slow every
+ * `/search` response so the resolution dashboard's load progress bar is
+ * actually visible (it's otherwise instant locally). Larger result sets take a
+ * little longer (base + per-row), so count calls (0 rows) return first — the
+ * plan/denominator lands before the page fetches and the determinate bar
+ * climbs visibly instead of snapping straight to 100%. Defaults to 0 (off).
+ */
+const MOCK_DELAY_MS = Math.max(0, Number(process.env.MOCK_JIRA_DELAY_MS) || 0);
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+function searchLatency(rowCount: number): number {
+  if (MOCK_DELAY_MS <= 0) return 0;
+  return MOCK_DELAY_MS + rowCount * Math.max(1, Math.round(MOCK_DELAY_MS / 150));
+}
+
 function startServer(opts: { port: number; name: string; issues: (baseUrl: string) => Issue[] }) {
   const baseUrl = `http://localhost:${opts.port}`;
   const issues = opts.issues(baseUrl);
@@ -822,6 +838,7 @@ function startServer(opts: { port: number; name: string; issues: (baseUrl: strin
         const page = filtered
           .slice(startAt, startAt + maxResults)
           .map((iss) => projectFields(iss, parsed.fields));
+        await sleep(searchLatency(page.length));
         jsonResponse(res, 200, {
           startAt,
           maxResults,
@@ -922,6 +939,13 @@ function startServer(opts: { port: number; name: string; issues: (baseUrl: strin
 
 const teamA = startServer({ port: 4567, name: "Team A Jira", issues: seedTeamA });
 const teamB = startServer({ port: 4568, name: "Team B Jira", issues: seedTeamB });
+
+if (MOCK_DELAY_MS > 0) {
+  console.log(
+    `\n[mock-jira] artificial latency ON: MOCK_JIRA_DELAY_MS=${MOCK_DELAY_MS}ms ` +
+      `(+${Math.max(1, Math.round(MOCK_DELAY_MS / 150))}ms/issue) — /search slowed for progress-bar testing`,
+  );
+}
 
 console.log("\nNext steps:");
 console.log("  1) Open http://localhost:3000/settings/servers and add both servers:");

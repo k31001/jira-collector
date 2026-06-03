@@ -86,7 +86,12 @@ async function jiraFetch(
 async function searchIssuesCloud(
   server: JiraServerConfig,
   jql: string,
-  options: { fields?: string[]; maxResults?: number; limit?: number },
+  options: {
+    fields?: string[];
+    maxResults?: number;
+    limit?: number;
+    onPage?: (pageCount: number) => void;
+  },
 ): Promise<RawJiraIssue[]> {
   const fields = options.fields ?? DEFAULT_FIELDS;
   const pageSize = options.maxResults ?? 500;
@@ -112,6 +117,7 @@ async function searchIssuesCloud(
       isLast?: boolean;
     };
     issues.push(...data.issues);
+    options.onPage?.(data.issues.length);
     if (data.isLast || !data.nextPageToken) break;
     nextPageToken = data.nextPageToken;
   }
@@ -121,7 +127,12 @@ async function searchIssuesCloud(
 async function searchIssuesServer(
   server: JiraServerConfig,
   jql: string,
-  options: { fields?: string[]; maxResults?: number; limit?: number },
+  options: {
+    fields?: string[];
+    maxResults?: number;
+    limit?: number;
+    onPage?: (pageCount: number) => void;
+  },
 ): Promise<RawJiraIssue[]> {
   const fields = options.fields ?? DEFAULT_FIELDS;
   const pageSize = options.maxResults ?? 500;
@@ -142,6 +153,7 @@ async function searchIssuesServer(
     });
     const data = (await res.json()) as { issues: RawJiraIssue[]; total: number };
     issues.push(...data.issues);
+    options.onPage?.(data.issues.length);
     if (data.issues.length < remaining) break;
     if (issues.length >= data.total) break;
     startAt += data.issues.length;
@@ -152,7 +164,13 @@ async function searchIssuesServer(
 export async function searchIssues(
   server: JiraServerConfig,
   jql: string,
-  options: { fields?: string[]; maxResults?: number; limit?: number } = {},
+  options: {
+    fields?: string[];
+    maxResults?: number;
+    limit?: number;
+    /** Called after each page with the number of issues in that page. */
+    onPage?: (pageCount: number) => void;
+  } = {},
 ): Promise<RawJiraIssue[]> {
   return isCloudHost(server.baseUrl)
     ? searchIssuesCloud(server, jql, options)

@@ -12,6 +12,17 @@
 
 ---
 
+## [1.21.0] — 2026-06-03
+
+### Added
+- **해결 시간 대시보드 로딩 진행 바(스트리밍)** — 콜드 로드 시 스피너 대신 실제 진행률을 표시합니다. 이슈 조회 API가 NDJSON 스트림으로 진행 상황을 흘려보내고(`plan` → `progress`* → `result`), 클라이언트가 이를 읽어 **"가져온 건수 / 예상 건수 · %"** 와 진행 속도 기반 **대략적 잔여 시간(ETA)** 을 보여줍니다.
+  - 예상 건수는 `countIssues`(approximate-count)를 소스별 병렬 호출로 산출 — 조회와 **동시에** 진행돼 첫 바이트를 지연시키지 않습니다. 도착 전엔 비결정형(가져온 건수만 표시), 도착 후 결정형 바로 전환.
+  - `searchIssues`에 페이지 단위 `onPage` 콜백, `fetchResolutionDashboardIssues`에 `{ onPlan, onProgress }` 추가. 이슈 라우트를 `ReadableStream` 기반 NDJSON 응답으로 변경(15초 TTL 캐시 유지 — 웜 히트는 즉시 `result` 한 줄).
+  - 새 컴포넌트 `LoadProgress`(결정형 % 바 + 경과/ETA, 비결정형 펄스). 초기 로드는 카드로, 새로고침 중에는 상단 스트립으로 노출. 정확한 "몇 초"는 Jira 지연 특성상 불가해 진행률·추정 ETA로 표현.
+  - 로컬 검증용: `mock-jira`에 `MOCK_JIRA_DELAY_MS` 추가 — `/search` 응답을 base + 행당으로 지연(예: `MOCK_JIRA_DELAY_MS=800 npm run mock-jira`)시켜, 로딩이 즉시 끝나 진행 바가 안 보이던 로컬 환경에서도 단계적 진행을 확인할 수 있습니다. 카운트(0행)가 먼저 반환돼 분모(plan)가 페이지 fetch보다 먼저 도착 → 바가 자연스럽게 차오릅니다. 기본 0(꺼짐).
+
+---
+
 ## [1.20.1] — 2026-06-02
 
 ### Changed
