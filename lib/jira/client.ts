@@ -137,28 +137,53 @@ async function searchIssuesServer(
   const fields = options.fields ?? DEFAULT_FIELDS;
   const pageSize = options.maxResults ?? 500;
   const limit = options.limit ?? 1000;
-  const issues: RawJiraIssue[] = [];
-  let startAt = 0;
-  while (issues.length < limit) {
-    const remaining = Math.min(pageSize, limit - issues.length);
+
+  const fetchPage = async (
+    startAt: number,
+    max: number,
+  ): Promise<{ issues: RawJiraIssue[]; total: number }> => {
     const res = await jiraFetch(server, "/rest/api/2/search", {
       method: "POST",
       body: JSON.stringify({
         jql,
         startAt,
-        maxResults: remaining,
+        maxResults: max,
         fields,
         expand: ["renderedFields"],
       }),
     });
-    const data = (await res.json()) as { issues: RawJiraIssue[]; total: number };
-    issues.push(...data.issues);
-    options.onPage?.(data.issues.length);
-    if (data.issues.length < remaining) break;
-    if (issues.length >= data.total) break;
-    startAt += data.issues.length;
+    return (await res.json()) as { issues: RawJiraIssue[]; total: number };
+  };
+
+  // Server/DC uses offset (`startAt`) pagination, so once the first page tells
+  // us `total` we can fetch the remaining pages in parallel rather than walking
+  // them one round-trip at a time. (Cloud's token-based `/search/jql` can't —
+  // it stays sequential in `searchIssuesCloud`.)
+  const firstMax = Math.min(pageSize, limit);
+  const first = await fetchPage(0, firstMax);
+  options.onPage?.(first.issues.length);
+  const issues = [...first.issues];
+  const target = Math.min(first.total, limit);
+
+  // Done if the first page already reached the target, or the server returned a
+  // short page (fewer than requested → no further results).
+  if (issues.length >= target || first.issues.length < firstMax) {
+    return issues.slice(0, limit);
   }
-  return issues;
+
+  const restPromises: Array<Promise<{ issues: RawJiraIssue[]; total: number }>> =
+    [];
+  for (let s = issues.length; s < target; s += pageSize) {
+    restPromises.push(
+      fetchPage(s, Math.min(pageSize, target - s)).then((p) => {
+        options.onPage?.(p.issues.length);
+        return p;
+      }),
+    );
+  }
+  const rest = await Promise.all(restPromises);
+  for (const p of rest) issues.push(...p.issues);
+  return issues.slice(0, limit);
 }
 
 export async function searchIssues(
