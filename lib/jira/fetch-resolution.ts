@@ -90,6 +90,12 @@ export type ResolutionPlanItem = {
 export type ResolutionFetchProgress = {
   onPlan?: (plannedTotal: number, perSource: ResolutionPlanItem[]) => void;
   onProgress?: (fetched: number) => void;
+  /**
+   * Fires as each source finishes (in completion order) with its display
+   * index, so the client can render that source's charts without waiting for
+   * the slower sources.
+   */
+  onSource?: (source: ResolutionSourceResult, index: number) => void;
 };
 
 export async function fetchResolutionDashboardIssues(
@@ -165,7 +171,7 @@ export async function fetchResolutionDashboardIssues(
     : Promise.resolve();
 
   const results: ResolutionSourceResult[] = await Promise.all(
-    sources.map(async (s) => {
+    sources.map(async (s, index) => {
       const serverName =
         serverNameMap.get(s.serverId) ?? s.serverId.slice(0, 8);
       let milestones: Milestone[] = [];
@@ -196,26 +202,32 @@ export async function fetchResolutionDashboardIssues(
         error: null,
       };
       const serverConfig = cfgById.get(s.id);
+      let result: ResolutionSourceResult;
       if (!serverConfig) {
-        return { ...base, error: "Jira 서버 설정을 찾을 수 없습니다" };
+        result = { ...base, error: "Jira 서버 설정을 찾을 수 없습니다" };
+      } else {
+        try {
+          const raws = await searchIssues(serverConfig, s.jql, {
+            fields,
+            limit: RESOLUTION_ISSUE_LIMIT,
+            onPage: bumpFetched,
+          });
+          const issues = raws.map((r) =>
+            normalizeIssue(r, serverConfig, ctx, undefined),
+          );
+          result = {
+            ...base,
+            issues,
+            capped: raws.length >= RESOLUTION_ISSUE_LIMIT,
+          };
+        } catch (err) {
+          result = { ...base, error: errorMessage(err) };
+        }
       }
-      try {
-        const raws = await searchIssues(serverConfig, s.jql, {
-          fields,
-          limit: RESOLUTION_ISSUE_LIMIT,
-          onPage: bumpFetched,
-        });
-        const issues = raws.map((r) =>
-          normalizeIssue(r, serverConfig, ctx, undefined),
-        );
-        return {
-          ...base,
-          issues,
-          capped: raws.length >= RESOLUTION_ISSUE_LIMIT,
-        };
-      } catch (err) {
-        return { ...base, error: errorMessage(err) };
-      }
+      // Emit as soon as this source finishes so the client can render it
+      // without waiting for the slower sources.
+      progress?.onSource?.(result, index);
+      return result;
     }),
   );
 

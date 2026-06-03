@@ -11,7 +11,8 @@ const cache = ttlCache<ResolutionDashboardIssuesResult>(15_000);
  * progress bar while a cold load runs:
  *   {"type":"plan","planned":N,"perSource":[...]}   // once counts are known
  *   {"type":"progress","fetched":M}                 // after each fetched page
- *   {"type":"result","data":{...}}                  // final payload
+ *   {"type":"source","index":i,"data":{...}}        // a single source finished
+ *   {"type":"result","data":{...}}                  // final (full) payload
  *   {"type":"error","message":"…"}                  // on failure
  *
  * On a warm cache hit (within the 15s TTL) the loader isn't invoked, so no
@@ -43,6 +44,8 @@ export async function GET(
             onPlan: (planned, perSource) =>
               send({ type: "plan", planned, perSource }),
             onProgress: (fetched) => send({ type: "progress", fetched }),
+            onSource: (source, index) =>
+              send({ type: "source", index, data: source }),
           }),
         );
         send({ type: "result", data: result });

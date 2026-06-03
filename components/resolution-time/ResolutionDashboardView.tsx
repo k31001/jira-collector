@@ -88,6 +88,7 @@ type Props = {
 type StreamEvent =
   | { type: "plan"; planned: number; perSource: ResolutionPlanItem[] }
   | { type: "progress"; fetched: number }
+  | { type: "source"; index: number; data: ResolutionSourceResult }
   | { type: "result"; data: ResolutionDashboardIssuesResult }
   | { type: "error"; message: string };
 
@@ -268,6 +269,12 @@ export function ResolutionDashboardView({
   const [loadProgress, setLoadProgress] =
     React.useState<LoadProgressState | null>(null);
 
+  // Per-source results as they stream in (by display index), so the dashboard
+  // can render the sources that have finished without waiting for the rest.
+  const [streamingSources, setStreamingSources] = React.useState<
+    (ResolutionSourceResult | undefined)[]
+  >([]);
+
   // Persist filters to localStorage
   React.useEffect(() => {
     try {
@@ -302,6 +309,7 @@ export function ResolutionDashboardView({
     queryKey: ["resolution-issues", dashboardId],
     queryFn: async () => {
       setLoadProgress({ fetched: 0, planned: null, startedAt: Date.now() });
+      setStreamingSources([]);
       const res = await fetch(`/api/resolution-time/${dashboardId}/issues`, {
         cache: "no-store",
       });
@@ -331,6 +339,13 @@ export function ResolutionDashboardView({
             setLoadProgress((p) => (p ? { ...p, planned: ev.planned } : p));
           } else if (ev.type === "progress") {
             setLoadProgress((p) => (p ? { ...p, fetched: ev.fetched } : p));
+          } else if (ev.type === "source") {
+            const { index, data } = ev;
+            setStreamingSources((prev) => {
+              const next = prev.slice();
+              next[index] = data;
+              return next;
+            });
           } else if (ev.type === "result") {
             result = ev.data;
           } else if (ev.type === "error") {
@@ -352,10 +367,14 @@ export function ResolutionDashboardView({
     }
   }, [query.data]);
 
-  const sources = React.useMemo(
-    () => query.data?.sources ?? [],
-    [query.data?.sources],
-  );
+  // Prefer the final (full) result; while it's still streaming, render from the
+  // sources that have arrived so far (progressive — charts appear per JQL).
+  const sources = React.useMemo(() => {
+    if (query.data?.sources) return query.data.sources;
+    return streamingSources.filter(
+      (s): s is ResolutionSourceResult => s !== undefined,
+    );
+  }, [query.data?.sources, streamingSources]);
 
   // Apply per-source smart filters (both built-in and custom), then compute
   // resolution stats. Custom facets run after the built-in ones so users see
@@ -482,7 +501,7 @@ export function ResolutionDashboardView({
       />
 
       {query.isFetching &&
-        !query.isLoading &&
+        sources.length > 0 &&
         loadProgress &&
         (loadProgress.planned !== null || loadProgress.fetched > 0) && (
           <Card>
@@ -498,7 +517,7 @@ export function ResolutionDashboardView({
             {(query.error as Error).message}
           </CardContent>
         </Card>
-      ) : query.isLoading ? (
+      ) : query.isLoading && sources.length === 0 ? (
         <Card>
           <CardContent className="py-10">
             {loadProgress ? (
