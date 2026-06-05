@@ -12,6 +12,18 @@
 
 ---
 
+## [1.22.1] — 2026-06-05
+
+### Fixed
+- **트렌드 차트: 짧은 윈도에서 Y축 변동이 보이지 않던 문제** — 누적 burn-up 특성상 day-0 에 윈도 이전 이벤트가 모두 folded 되어 시작 값이 높아, 14일 같은 짧은 윈도에서 며칠치 변동이 0~max 스케일에 묻혔습니다.
+  - **누적 영역(생성·해결)을 왼쪽 Y축**의 자동 zoom 도메인으로 분리(`[min - 12%pad, max + 12%pad]`, 0 floor). 윈도 길이가 짧아도 day-by-day 변동이 시각적으로 부각됩니다.
+  - **미해결(스냅샷) 라인은 오른쪽 Y축**으로 이동해 자기 범위(`[min - 20%pad, max + 20%pad]`) 안에서 그려집니다. 누적치와 잔량의 크기 차이가 더 이상 서로를 squash 하지 않습니다.
+  - 범례에 `← 좌축` / `우축 →` 라벨과 우측 축 tick 컬러를 미해결 라인과 동일한 amber 로 맞춰 어느 축이 무엇인지 명시.
+
+[1.22.1]: https://github.com/k31001/jira-collector/releases/tag/v1.22.1
+
+---
+
 ## [1.22.0] — 2026-06-05
 
 ### Added
@@ -494,5 +506,5 @@
   - `tests/adf.test.ts` — ADF → text 변환
   - `tests/normalize.test.ts` — Done 카테고리 fallback
 
-[Unreleased]: https://github.com/k31001/jira-collector/compare/v1.6.2...HEAD
+[Unreleased]: https://github.com/k31001/jira-collector/compare/v1.22.1...HEAD
 [1.0.0]: https://github.com/k31001/jira-collector/releases/tag/v1.0.0

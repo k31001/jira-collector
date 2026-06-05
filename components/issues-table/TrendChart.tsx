@@ -157,6 +157,48 @@ export function TrendChart({
   const totalResolved = last?.resolved ?? 0;
   const unresolvedNow = last?.unresolved ?? 0;
 
+  /**
+   * Cumulative areas start high (older events folded into day 0) so the day-by-
+   * day delta becomes invisible if the Y axis is pinned to 0. Auto-zoom the
+   * left axis to just the visible variation of the two area series with a 12%
+   * padding band. The unresolved line lives on its own right axis because it
+   * sits at a different magnitude — without splitting them, focusing one
+   * squashes the other.
+   */
+  const cumulativeYDomain = React.useMemo<[number, number]>(() => {
+    if (data.length === 0) return [0, 1];
+    let min = Infinity;
+    let max = -Infinity;
+    for (const p of data) {
+      if (p.resolved < min) min = p.resolved;
+      if (p.created > max) max = p.created;
+    }
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return [0, 1];
+    const span = max - min;
+    const pad = Math.max(1, Math.ceil(span * 0.12));
+    const lower = Math.max(0, min - pad);
+    const upper = max + pad;
+    if (upper - lower < 2) return [lower, lower + 2];
+    return [lower, upper];
+  }, [data]);
+
+  const unresolvedYDomain = React.useMemo<[number, number]>(() => {
+    if (data.length === 0) return [0, 1];
+    let min = Infinity;
+    let max = -Infinity;
+    for (const p of data) {
+      if (p.unresolved < min) min = p.unresolved;
+      if (p.unresolved > max) max = p.unresolved;
+    }
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return [0, 1];
+    const span = max - min;
+    const pad = Math.max(1, Math.ceil(span * 0.2));
+    const lower = Math.max(0, min - pad);
+    const upper = max + pad;
+    if (upper - lower < 2) return [Math.max(0, lower - 1), upper + 1];
+    return [lower, upper];
+  }, [data]);
+
   const heightPx = Math.round(BASE_HEIGHT_PX * size);
 
   return (
@@ -236,7 +278,7 @@ export function TrendChart({
         <div className="px-6 pb-3">
           <div style={{ height: heightPx }} className="w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data} margin={{ top: 8, right: 12, left: -20, bottom: 0 }}>
+              <AreaChart data={data} margin={{ top: 8, right: -8, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="grad-created" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#3B82F6" stopOpacity={0.45} />
@@ -257,7 +299,19 @@ export function TrendChart({
                   minTickGap={20}
                 />
                 <YAxis
+                  yAxisId="left"
+                  domain={cumulativeYDomain}
                   tick={{ fontSize: 10, fill: "currentColor", fillOpacity: 0.6 }}
+                  axisLine={false}
+                  tickLine={false}
+                  allowDecimals={false}
+                  width={28}
+                />
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
+                  domain={unresolvedYDomain}
+                  tick={{ fontSize: 10, fill: "#F59E0B", fillOpacity: 0.85 }}
                   axisLine={false}
                   tickLine={false}
                   allowDecimals={false}
@@ -290,6 +344,7 @@ export function TrendChart({
                   }}
                 />
                 <Area
+                  yAxisId="left"
                   type="monotone"
                   dataKey="created"
                   stroke="#3B82F6"
@@ -298,6 +353,7 @@ export function TrendChart({
                   isAnimationActive={false}
                 />
                 <Area
+                  yAxisId="left"
                   type="monotone"
                   dataKey="resolved"
                   stroke="#10B981"
@@ -306,6 +362,7 @@ export function TrendChart({
                   isAnimationActive={false}
                 />
                 <Line
+                  yAxisId="right"
                   type="monotone"
                   dataKey="unresolved"
                   stroke="#F59E0B"
@@ -317,7 +374,7 @@ export function TrendChart({
               </AreaChart>
             </ResponsiveContainer>
           </div>
-          <div className="mt-1 flex items-center gap-4 text-[11px] text-muted-foreground">
+          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <span className="inline-block h-2 w-3 rounded-sm" style={{ background: "#3B82F6" }} />
               누적 생성
@@ -326,6 +383,7 @@ export function TrendChart({
               <span className="inline-block h-2 w-3 rounded-sm" style={{ background: "#10B981" }} />
               누적 해결
             </span>
+            <span className="opacity-70">← 좌축</span>
             <span className="flex items-center gap-1.5">
               <span
                 className="inline-block h-[2px] w-3"
@@ -336,6 +394,7 @@ export function TrendChart({
               />
               미해결 (스냅샷)
             </span>
+            <span className="opacity-70">우축 →</span>
           </div>
         </div>
       )}
