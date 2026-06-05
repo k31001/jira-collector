@@ -182,21 +182,21 @@ export function TrendChart({
     return [lower, upper];
   }, [data]);
 
+  /**
+   * Cap the right axis at `2 × peak` so the unresolved line never rises past
+   * roughly the midpoint of the chart, even when the absolute value spikes.
+   * This keeps the 누적 영역(좌축)이 시각적으로 dominant 하고, 미해결 라인이
+   * 영역 fill 위로 올라타 보이는 시각적 충돌을 막습니다. 좌축의 zoom은
+   * 생성/해결 데이터로 이미 결정되므로 우축은 거기에 종속되는 형태.
+   */
   const unresolvedYDomain = React.useMemo<[number, number]>(() => {
-    if (data.length === 0) return [0, 1];
-    let min = Infinity;
-    let max = -Infinity;
+    if (data.length === 0) return [0, 2];
+    let max = 0;
     for (const p of data) {
-      if (p.unresolved < min) min = p.unresolved;
       if (p.unresolved > max) max = p.unresolved;
     }
-    if (!Number.isFinite(min) || !Number.isFinite(max)) return [0, 1];
-    const span = max - min;
-    const pad = Math.max(1, Math.ceil(span * 0.2));
-    const lower = Math.max(0, min - pad);
-    const upper = max + pad;
-    if (upper - lower < 2) return [Math.max(0, lower - 1), upper + 1];
-    return [lower, upper];
+    const upper = Math.max(2, Math.ceil(max * 2));
+    return [0, upper];
   }, [data]);
 
   const heightPx = Math.round(BASE_HEIGHT_PX * size);

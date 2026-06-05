@@ -12,6 +12,18 @@
 
 ---
 
+## [1.22.2] — 2026-06-05
+
+### Changed
+- **트렌드 차트 우축(미해결) 도메인 정책 변경** — v1.22.1의 자동 zoom(`[min−20%pad, max+20%pad]`)은 미해결 값이 안정적이면 라인이 차트 상단까지 차올라 누적 영역과 겹쳐 보이는 케이스가 있었습니다.
+  - 새 정책: 우축은 항상 0부터, 상한은 `Math.max(2, ceil(peak × 2))` — 즉 **peak가 차트 중간쯤에 머무르도록 캡**.
+  - 좌축은 그대로 생성/해결 데이터 기반 auto-zoom(`[min−12%, max+12%]`)이며, 우축은 좌축의 시각적 dominance를 유지하도록 종속.
+  - 결과: 미해결 라인이 항상 누적 영역 fill 아래 절반 영역에서 움직여 시각적 충돌이 없어지고, 좌축의 day-by-day 변동을 가리지 않습니다.
+
+[1.22.2]: https://github.com/k31001/jira-collector/releases/tag/v1.22.2
+
+---
+
 ## [1.22.1] — 2026-06-05
 
 ### Fixed
@@ -506,5 +518,5 @@
   - `tests/adf.test.ts` — ADF → text 변환
   - `tests/normalize.test.ts` — Done 카테고리 fallback
 
-[Unreleased]: https://github.com/k31001/jira-collector/compare/v1.22.1...HEAD
+[Unreleased]: https://github.com/k31001/jira-collector/compare/v1.22.2...HEAD
 [1.0.0]: https://github.com/k31001/jira-collector/releases/tag/v1.0.0
