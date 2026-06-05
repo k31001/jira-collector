@@ -6,6 +6,7 @@ import { useTransition } from "react";
 import { toast } from "sonner";
 import {
   AlertCircle,
+  Check,
   CheckCircle2,
   Loader2,
   Plus,
@@ -23,6 +24,7 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 import type { RegisteredServer } from "@/lib/jira/url-parser";
 import {
   createResolutionDashboard,
@@ -40,6 +42,15 @@ export type ResolutionSourceItem = {
   milestones: Milestone[];
 };
 
+/** A globally-defined ratio the user can attach to this dashboard. */
+export type RatioLibraryItem = {
+  id: string;
+  name: string;
+  basis: "created" | "resolved";
+  numeratorJql: string;
+  denominatorJql: string;
+};
+
 type FormState = {
   name: string;
   description: string;
@@ -48,6 +59,7 @@ type FormState = {
   histogramBucketHours: number;
   refreshIntervalSec: number;
   sources: ResolutionSourceItem[];
+  ratioConfigIds: string[];
 };
 
 const DEFAULT_COLORS = [
@@ -64,6 +76,8 @@ const DEFAULT_COLORS = [
 type Props = {
   mode: "create" | "edit";
   servers: RegisteredServer[];
+  /** All globally-defined ratios, available to attach to this dashboard. */
+  ratioLibrary: RatioLibraryItem[];
   initial?: {
     id: string;
     name: string;
@@ -73,10 +87,16 @@ type Props = {
     histogramBucketHours: number;
     refreshIntervalSec: number;
     sources: ResolutionSourceItem[];
+    ratioConfigIds: string[];
   };
 };
 
-export function ResolutionDashboardForm({ mode, servers, initial }: Props) {
+export function ResolutionDashboardForm({
+  mode,
+  servers,
+  ratioLibrary,
+  initial,
+}: Props) {
   const router = useRouter();
   const [state, setState] = React.useState<FormState>({
     name: initial?.name ?? "",
@@ -86,6 +106,7 @@ export function ResolutionDashboardForm({ mode, servers, initial }: Props) {
     histogramBucketHours: initial?.histogramBucketHours ?? 24,
     refreshIntervalSec: initial?.refreshIntervalSec ?? 600,
     sources: initial?.sources ?? [],
+    ratioConfigIds: initial?.ratioConfigIds ?? [],
   });
   const [pending, startTransition] = useTransition();
 
@@ -125,6 +146,15 @@ export function ResolutionDashboardForm({ mode, servers, initial }: Props) {
     }));
   }
 
+  function toggleRatio(id: string, on: boolean) {
+    setState((s) => ({
+      ...s,
+      ratioConfigIds: on
+        ? [...s.ratioConfigIds, id]
+        : s.ratioConfigIds.filter((x) => x !== id),
+    }));
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     startTransition(async () => {
@@ -137,6 +167,7 @@ export function ResolutionDashboardForm({ mode, servers, initial }: Props) {
           histogramBucketHours: state.histogramBucketHours,
           refreshIntervalSec: state.refreshIntervalSec,
           sources: state.sources,
+          ratioConfigIds: state.ratioConfigIds,
         };
         if (mode === "create") {
           const { id } = await createResolutionDashboard(payload);
@@ -267,6 +298,65 @@ export function ResolutionDashboardForm({ mode, servers, initial }: Props) {
             JQL 추가
           </Button>
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label>비율 분석 카드</Label>
+        <p className="text-xs text-muted-foreground">
+          이 대시보드에 표시할 비율을 선택하세요. 정의는{" "}
+          <a className="underline" href="/settings/ratio-analysis">
+            비율 분석 설정
+          </a>
+          에서 공유 관리됩니다.
+        </p>
+        {ratioLibrary.length === 0 ? (
+          <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+            정의된 비율이 없습니다.{" "}
+            <a className="underline" href="/settings/ratio-analysis">
+              비율 분석 설정
+            </a>
+            에서 먼저 추가하면 여기서 선택할 수 있습니다.
+          </p>
+        ) : (
+          <div className="space-y-1.5">
+            {ratioLibrary.map((r) => {
+              const checked = state.ratioConfigIds.includes(r.id);
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => toggleRatio(r.id, !checked)}
+                  aria-pressed={checked}
+                  className="flex w-full items-start gap-3 rounded-md border p-2.5 text-left transition-colors hover:bg-accent/50"
+                >
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition-colors",
+                      checked
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-input",
+                    )}
+                  >
+                    {checked && <Check className="h-3.5 w-3.5" />}
+                  </span>
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="font-medium">{r.name}</span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {r.basis === "resolved" ? "해결일" : "생성일"} 기준
+                      </span>
+                    </div>
+                    <div className="truncate font-mono text-[11px] text-muted-foreground">
+                      분자 {r.numeratorJql} · 분모{" "}
+                      {r.denominatorJql.trim() || "전체"}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className="flex justify-end gap-2">

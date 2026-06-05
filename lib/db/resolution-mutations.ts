@@ -5,15 +5,23 @@
 import "server-only";
 import { z } from "zod";
 import { nanoid } from "nanoid";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { db as defaultDb } from "./client";
 import {
+  ratioConfigs,
   resolutionDashboards,
+  resolutionDashboardRatios,
   resolutionDashboardSources,
 } from "./schema";
 
-type AnyDb = BetterSQLite3Database<Record<string, never>> | typeof defaultDb;
+// Accept the app's schema-bound db, an explicitly empty-schema db, or a
+// schema-less db (what `drizzle(sqlite)` yields in tests) — all expose the
+// same query builder used below.
+type AnyDb =
+  | BetterSQLite3Database<Record<string, never>>
+  | BetterSQLite3Database<Record<string, unknown>>
+  | typeof defaultDb;
 
 export const TIME_BUCKETS = ["day", "week", "month", "quarter"] as const;
 
@@ -45,6 +53,8 @@ export const resolutionDashboardInputSchema = z.object({
   histogramBucketHours: z.number().int().min(1).max(720).default(24),
   refreshIntervalSec: z.number().int().min(0).max(86_400).default(600),
   sources: z.array(sourceSchema).default([]),
+  /** Ids of global ratio configs this dashboard displays (order = render order). */
+  ratioConfigIds: z.array(z.string()).default([]),
 });
 
 // Hand-rolled to avoid `.partial()` which preserves the `.default([])` on
@@ -58,6 +68,8 @@ export const resolutionDashboardUpdateSchema = z.object({
   histogramBucketHours: z.number().int().min(1).max(720).optional(),
   refreshIntervalSec: z.number().int().min(0).max(86_400).optional(),
   sources: z.array(sourceSchema).optional(),
+  // `undefined` = leave attachments untouched; `[]` = detach all.
+  ratioConfigIds: z.array(z.string()).optional(),
 });
 
 export type ResolutionDashboardInput = z.infer<
@@ -66,6 +78,46 @@ export type ResolutionDashboardInput = z.infer<
 export type ResolutionDashboardUpdate = z.infer<
   typeof resolutionDashboardUpdateSchema
 >;
+
+/**
+ * Replace a dashboard's ratio attachments with `ratioConfigIds` (delete-all
+ * then insert), mirroring how sources are replaced. Ids that no longer exist
+ * are dropped and duplicates are collapsed, so a stale selection can't violate
+ * the (dashboard, ratio) unique index or leave a dangling FK.
+ */
+function replaceDashboardRatios(
+  database: AnyDb,
+  dashboardId: string,
+  ratioConfigIds: string[],
+): void {
+  database
+    .delete(resolutionDashboardRatios)
+    .where(eq(resolutionDashboardRatios.dashboardId, dashboardId))
+    .run();
+  if (ratioConfigIds.length === 0) return;
+  const existing = new Set(
+    database
+      .select({ id: ratioConfigs.id })
+      .from(ratioConfigs)
+      .where(inArray(ratioConfigs.id, ratioConfigIds))
+      .all()
+      .map((r) => r.id),
+  );
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const id of ratioConfigIds) {
+    if (existing.has(id) && !seen.has(id)) {
+      seen.add(id);
+      ordered.push(id);
+    }
+  }
+  ordered.forEach((ratioConfigId, i) => {
+    database
+      .insert(resolutionDashboardRatios)
+      .values({ id: nanoid(), dashboardId, ratioConfigId, displayOrder: i })
+      .run();
+  });
+}
 
 export function applyCreateResolutionDashboard(
   input: ResolutionDashboardInput,
@@ -103,6 +155,7 @@ export function applyCreateResolutionDashboard(
       })
       .run();
   });
+  replaceDashboardRatios(database, id, data.ratioConfigIds);
   return { id };
 }
 
@@ -150,6 +203,10 @@ export function applyUpdateResolutionDashboard(
         })
         .run();
     });
+  }
+
+  if (next.ratioConfigIds !== undefined) {
+    replaceDashboardRatios(database, id, next.ratioConfigIds);
   }
 }
 

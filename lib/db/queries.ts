@@ -12,6 +12,7 @@ import {
   customFacets,
   customFacetValues,
   ratioConfigs,
+  resolutionDashboardRatios,
 } from "./schema";
 import { decrypt } from "@/lib/crypto";
 import type { JiraServerConfig } from "@/lib/jira/types";
@@ -178,6 +179,58 @@ export function listRatioConfigs(): RatioConfigDef[] {
       basis: r.basis === "resolved" ? "resolved" : "created",
       displayOrder: r.displayOrder,
     }));
+}
+
+/**
+ * The ratio configs a specific dashboard has opted into, in the order they
+ * should render. Definitions live in `ratio_configs`; `resolution_dashboard_ratios`
+ * scopes which ones this dashboard shows. Same `RatioConfigDef` shape as
+ * `listRatioConfigs` so `ResolutionDashboardView` consumes it unchanged.
+ */
+export function listRatioConfigsForDashboard(
+  dashboardId: string,
+): RatioConfigDef[] {
+  return db
+    .select({
+      id: ratioConfigs.id,
+      name: ratioConfigs.name,
+      numeratorJql: ratioConfigs.numeratorJql,
+      denominatorJql: ratioConfigs.denominatorJql,
+      basis: ratioConfigs.basis,
+      displayOrder: resolutionDashboardRatios.displayOrder,
+    })
+    .from(resolutionDashboardRatios)
+    .innerJoin(
+      ratioConfigs,
+      eq(resolutionDashboardRatios.ratioConfigId, ratioConfigs.id),
+    )
+    .where(eq(resolutionDashboardRatios.dashboardId, dashboardId))
+    .orderBy(
+      asc(resolutionDashboardRatios.displayOrder),
+      asc(ratioConfigs.createdAt),
+    )
+    .all()
+    .map((r) => ({
+      id: r.id,
+      name: r.name,
+      numeratorJql: r.numeratorJql,
+      denominatorJql: r.denominatorJql,
+      basis: r.basis === "resolved" ? "resolved" : "created",
+      displayOrder: r.displayOrder,
+    }));
+}
+
+/** How many dashboards each ratio config is attached to, keyed by ratio id. */
+export function countDashboardsByRatio(): Map<string, number> {
+  const rows = db
+    .select({ ratioConfigId: resolutionDashboardRatios.ratioConfigId })
+    .from(resolutionDashboardRatios)
+    .all();
+  const counts = new Map<string, number>();
+  for (const { ratioConfigId } of rows) {
+    counts.set(ratioConfigId, (counts.get(ratioConfigId) ?? 0) + 1);
+  }
+  return counts;
 }
 
 export async function getStatusContext() {

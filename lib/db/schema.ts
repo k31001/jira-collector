@@ -174,6 +174,34 @@ export const ratioConfigs = sqliteTable("ratio_configs", {
   updatedAt: integer("updated_at").notNull().default(sql`(unixepoch())`),
 });
 
+/**
+ * Which global ratio configs a given resolution dashboard displays. Ratio
+ * definitions stay shared in `ratio_configs`; this join table scopes the
+ * *selection* per dashboard so each dashboard can show a different subset.
+ */
+export const resolutionDashboardRatios = sqliteTable(
+  "resolution_dashboard_ratios",
+  {
+    id: text("id").primaryKey(),
+    dashboardId: text("dashboard_id")
+      .notNull()
+      .references(() => resolutionDashboards.id, { onDelete: "cascade" }),
+    ratioConfigId: text("ratio_config_id")
+      .notNull()
+      .references(() => ratioConfigs.id, { onDelete: "cascade" }),
+    displayOrder: integer("display_order").notNull().default(0),
+  },
+  (t) => ({
+    byDashboard: index("resolution_dashboard_ratios_dashboard_idx").on(
+      t.dashboardId,
+    ),
+    uniquePair: uniqueIndex("resolution_dashboard_ratios_pair_idx").on(
+      t.dashboardId,
+      t.ratioConfigId,
+    ),
+  }),
+);
+
 export type JiraServer = typeof jiraServers.$inferSelect;
 export type NewJiraServer = typeof jiraServers.$inferInsert;
 export type Dashboard = typeof dashboards.$inferSelect;
@@ -187,6 +215,7 @@ export type StatusColor = typeof statusColors.$inferSelect;
 export type ResolutionDashboard = typeof resolutionDashboards.$inferSelect;
 export type NewResolutionDashboard = typeof resolutionDashboards.$inferInsert;
 export type ResolutionDashboardSource = typeof resolutionDashboardSources.$inferSelect;
+export type ResolutionDashboardRatio = typeof resolutionDashboardRatios.$inferSelect;
 export type NewResolutionDashboardSource =
   typeof resolutionDashboardSources.$inferInsert;
 export type CustomFacet = typeof customFacets.$inferSelect;

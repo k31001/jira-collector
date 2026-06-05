@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AlertCircle, CheckCircle2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -62,8 +63,11 @@ const SUPPORTED = (
 
 export function RatioAnalysisClient({
   initialConfigs,
+  usage,
 }: {
   initialConfigs: RatioConfigDef[];
+  /** ratio config id → number of dashboards displaying it. */
+  usage: Record<string, number>;
 }) {
   const router = useRouter();
   const [creating, setCreating] = React.useState(false);
@@ -104,6 +108,13 @@ export function RatioAnalysisClient({
         initialConfigs.map((c) => (
           <Card key={c.id}>
             <CardContent className="p-4">
+              <div className="mb-2 flex justify-end">
+                <Badge variant={usage[c.id] ? "secondary" : "outline"}>
+                  {usage[c.id]
+                    ? `${usage[c.id]}개 대시보드에서 사용 중`
+                    : "사용하는 대시보드 없음"}
+                </Badge>
+              </div>
               <RatioForm
                 mode="edit"
                 config={c}

@@ -7,7 +7,10 @@ import {
   resolutionDashboards as table,
   resolutionDashboardSources,
 } from "@/lib/db/schema";
-import { listCustomFacetsWithValues, listRatioConfigs } from "@/lib/db/queries";
+import {
+  listCustomFacetsWithValues,
+  listRatioConfigsForDashboard,
+} from "@/lib/db/queries";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { ResolutionFavoriteButton } from "@/components/resolution-time/ResolutionFavoriteButton";
@@ -32,7 +35,7 @@ export default async function ResolutionDashboardViewPage({
     .sort((a, b) => a.displayOrder - b.displayOrder);
 
   const customFacets = listCustomFacetsWithValues();
-  const ratioConfigs = listRatioConfigs();
+  const ratioConfigs = listRatioConfigsForDashboard(id);
 
   return (
     <>
