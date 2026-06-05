@@ -6,10 +6,6 @@ import {
   resolutionDashboardSources,
   jiraServers,
 } from "@/lib/db/schema";
-import {
-  listRatioConfigs,
-  listRatioConfigsForDashboard,
-} from "@/lib/db/queries";
 import { PageHeader } from "@/components/page-header";
 import {
   ResolutionDashboardForm,
@@ -41,9 +37,6 @@ export default async function EditResolutionDashboardPage({
       baseUrl: jiraServers.baseUrl,
     })
     .from(jiraServers);
-
-  const ratioLibrary = listRatioConfigs();
-  const selectedRatioIds = listRatioConfigsForDashboard(id).map((r) => r.id);
 
   const sourceItems: ResolutionSourceItem[] = sources.map((s) => {
     let milestones: { name: string; date: string }[] = [];
@@ -80,7 +73,6 @@ export default async function EditResolutionDashboardPage({
         <ResolutionDashboardForm
           mode="edit"
           servers={servers}
-          ratioLibrary={ratioLibrary}
           initial={{
             id: dash.id,
             name: dash.name,
@@ -90,7 +82,6 @@ export default async function EditResolutionDashboardPage({
             histogramBucketHours: dash.histogramBucketHours,
             refreshIntervalSec: dash.refreshIntervalSec,
             sources: sourceItems,
-            ratioConfigIds: selectedRatioIds,
           }}
         />
       </div>

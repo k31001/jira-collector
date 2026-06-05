@@ -12,6 +12,19 @@
 
 ---
 
+## [1.23.0] — 2026-06-05
+
+### Changed
+- **비율 ↔ 대시보드 연결을 비율 설정에서 다중 선택** — 대시보드 편집 화면의 "비율 분석 카드" 선택 섹션을 제거하고, `비율 분석` 설정에서 각 비율마다 **표시할 해결 시간 대시보드를 다중 선택**하도록 방향을 뒤집었습니다. 같은 비율을 여러 대시보드에 붙이는 작업이 비율 한 곳에서 끝납니다.
+  - 조인 테이블(`resolution_dashboard_ratios`)과 대시보드 뷰(`listRatioConfigsForDashboard`)는 그대로 — 데이터 모델 변경 없이 편집 UI 위치만 이동하며 기존 연결은 보존됩니다.
+  - 비율 액션(`createRatioConfig`/`updateRatioConfig`)이 `dashboardIds`를 받아 연결을 교체(`applyReplaceRatioDashboards`). 한 대시보드 안의 표시 순서는 비율의 전역 순서를 따릅니다.
+  - 설정 페이지의 "N개 대시보드에서 사용 중" 배지는 대시보드 다중 선택 칩으로 대체. 대시보드 삭제 시 연결은 FK cascade로 정리됩니다.
+  - 조인 헬퍼를 대시보드 측에서 비율 측으로 이전하고 라운드트립 단위 테스트 재작성(연결·교체·해제·중복/미존재 정리·displayOrder·cascade, 총 102개).
+
+[1.23.0]: https://github.com/k31001/jira-collector/releases/tag/v1.23.0
+
+---
+
 ## [1.22.3] — 2026-06-05
 
 ### Fixed

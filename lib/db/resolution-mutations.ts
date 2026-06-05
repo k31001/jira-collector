@@ -53,8 +53,6 @@ export const resolutionDashboardInputSchema = z.object({
   histogramBucketHours: z.number().int().min(1).max(720).default(24),
   refreshIntervalSec: z.number().int().min(0).max(86_400).default(600),
   sources: z.array(sourceSchema).default([]),
-  /** Ids of global ratio configs this dashboard displays (order = render order). */
-  ratioConfigIds: z.array(z.string()).default([]),
 });
 
 // Hand-rolled to avoid `.partial()` which preserves the `.default([])` on
@@ -68,8 +66,6 @@ export const resolutionDashboardUpdateSchema = z.object({
   histogramBucketHours: z.number().int().min(1).max(720).optional(),
   refreshIntervalSec: z.number().int().min(0).max(86_400).optional(),
   sources: z.array(sourceSchema).optional(),
-  // `undefined` = leave attachments untouched; `[]` = detach all.
-  ratioConfigIds: z.array(z.string()).optional(),
 });
 
 export type ResolutionDashboardInput = z.infer<
@@ -80,43 +76,52 @@ export type ResolutionDashboardUpdate = z.infer<
 >;
 
 /**
- * Replace a dashboard's ratio attachments with `ratioConfigIds` (delete-all
- * then insert), mirroring how sources are replaced. Ids that no longer exist
- * are dropped and duplicates are collapsed, so a stale selection can't violate
- * the (dashboard, ratio) unique index or leave a dangling FK.
+ * Replace the set of dashboards a ratio config is shown on (delete-all then
+ * insert) — the ratio-side mirror of how sources are replaced. Unknown dashboard
+ * ids are dropped and duplicates collapsed, so a stale selection can't violate
+ * the (dashboard, ratio) unique index or leave a dangling FK. Each join row's
+ * `displayOrder` is the ratio's global order, so a dashboard renders its ratios
+ * in library order regardless of which ratio attached it.
  */
-function replaceDashboardRatios(
-  database: AnyDb,
-  dashboardId: string,
-  ratioConfigIds: string[],
+export function applyReplaceRatioDashboards(
+  ratioConfigId: string,
+  dashboardIds: string[],
+  database: AnyDb = defaultDb,
 ): void {
   database
     .delete(resolutionDashboardRatios)
-    .where(eq(resolutionDashboardRatios.dashboardId, dashboardId))
+    .where(eq(resolutionDashboardRatios.ratioConfigId, ratioConfigId))
     .run();
-  if (ratioConfigIds.length === 0) return;
+  if (dashboardIds.length === 0) return;
+  const order =
+    database
+      .select({ v: ratioConfigs.displayOrder })
+      .from(ratioConfigs)
+      .where(eq(ratioConfigs.id, ratioConfigId))
+      .get()?.v ?? 0;
   const existing = new Set(
     database
-      .select({ id: ratioConfigs.id })
-      .from(ratioConfigs)
-      .where(inArray(ratioConfigs.id, ratioConfigIds))
+      .select({ id: resolutionDashboards.id })
+      .from(resolutionDashboards)
+      .where(inArray(resolutionDashboards.id, dashboardIds))
       .all()
       .map((r) => r.id),
   );
   const seen = new Set<string>();
-  const ordered: string[] = [];
-  for (const id of ratioConfigIds) {
-    if (existing.has(id) && !seen.has(id)) {
-      seen.add(id);
-      ordered.push(id);
+  for (const dashboardId of dashboardIds) {
+    if (existing.has(dashboardId) && !seen.has(dashboardId)) {
+      seen.add(dashboardId);
+      database
+        .insert(resolutionDashboardRatios)
+        .values({
+          id: nanoid(),
+          dashboardId,
+          ratioConfigId,
+          displayOrder: order,
+        })
+        .run();
     }
   }
-  ordered.forEach((ratioConfigId, i) => {
-    database
-      .insert(resolutionDashboardRatios)
-      .values({ id: nanoid(), dashboardId, ratioConfigId, displayOrder: i })
-      .run();
-  });
 }
 
 export function applyCreateResolutionDashboard(
@@ -155,7 +160,6 @@ export function applyCreateResolutionDashboard(
       })
       .run();
   });
-  replaceDashboardRatios(database, id, data.ratioConfigIds);
   return { id };
 }
 
@@ -203,10 +207,6 @@ export function applyUpdateResolutionDashboard(
         })
         .run();
     });
-  }
-
-  if (next.ratioConfigIds !== undefined) {
-    replaceDashboardRatios(database, id, next.ratioConfigIds);
   }
 }
 

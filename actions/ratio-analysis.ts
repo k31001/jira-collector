@@ -6,6 +6,7 @@ import { eq, max } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db/client";
 import { ratioConfigs } from "@/lib/db/schema";
+import { applyReplaceRatioDashboards } from "@/lib/db/resolution-mutations";
 import { parseJql } from "@/lib/jql-eval";
 
 const basisEnum = z.enum(["created", "resolved"]);
@@ -15,6 +16,8 @@ const createInput = z.object({
   numeratorJql: z.string().trim().min(1, "분자 JQL이 필요합니다").max(500),
   denominatorJql: z.string().trim().max(500).optional().default(""),
   basis: basisEnum.optional().default("created"),
+  /** Resolution dashboards this ratio appears on. */
+  dashboardIds: z.array(z.string()).optional().default([]),
 });
 
 const updateInput = z.object({
@@ -23,6 +26,8 @@ const updateInput = z.object({
   denominatorJql: z.string().trim().max(500).optional(),
   basis: basisEnum.optional(),
   displayOrder: z.number().int().optional(),
+  // `undefined` = leave dashboard attachments untouched; `[]` = detach all.
+  dashboardIds: z.array(z.string()).optional(),
 });
 
 export type CreateRatioInput = z.infer<typeof createInput>;
@@ -57,6 +62,7 @@ export async function createRatioConfig(input: CreateRatioInput) {
       displayOrder: (last?.v ?? -1) + 1,
     })
     .run();
+  applyReplaceRatioDashboards(id, data.dashboardIds);
   revalidatePath("/settings/ratio-analysis");
   revalidatePath("/resolution-time", "layout");
   return { id };
@@ -78,9 +84,13 @@ export async function updateRatioConfig(
     update.denominatorJql = data.denominatorJql;
   if (data.basis !== undefined) update.basis = data.basis;
   if (data.displayOrder !== undefined) update.displayOrder = data.displayOrder;
-  if (Object.keys(update).length === 0) return;
-  update.updatedAt = Math.floor(Date.now() / 1000);
-  db.update(ratioConfigs).set(update).where(eq(ratioConfigs.id, id)).run();
+  if (Object.keys(update).length > 0) {
+    update.updatedAt = Math.floor(Date.now() / 1000);
+    db.update(ratioConfigs).set(update).where(eq(ratioConfigs.id, id)).run();
+  }
+  if (data.dashboardIds !== undefined) {
+    applyReplaceRatioDashboards(id, data.dashboardIds);
+  }
   revalidatePath("/settings/ratio-analysis");
   revalidatePath("/resolution-time", "layout");
 }

@@ -12,6 +12,7 @@ import {
   customFacets,
   customFacetValues,
   ratioConfigs,
+  resolutionDashboards,
   resolutionDashboardRatios,
 } from "./schema";
 import { decrypt } from "@/lib/crypto";
@@ -220,17 +221,32 @@ export function listRatioConfigsForDashboard(
     }));
 }
 
-/** How many dashboards each ratio config is attached to, keyed by ratio id. */
-export function countDashboardsByRatio(): Map<string, number> {
+/** Minimal {id, name} list of resolution dashboards for attachment pickers. */
+export function listResolutionDashboardsBrief(): {
+  id: string;
+  name: string;
+}[] {
+  return db
+    .select({ id: resolutionDashboards.id, name: resolutionDashboards.name })
+    .from(resolutionDashboards)
+    .orderBy(asc(resolutionDashboards.name))
+    .all();
+}
+
+/** For each ratio config id, the dashboard ids it is attached to. */
+export function listDashboardIdsByRatio(): Record<string, string[]> {
   const rows = db
-    .select({ ratioConfigId: resolutionDashboardRatios.ratioConfigId })
+    .select({
+      ratioConfigId: resolutionDashboardRatios.ratioConfigId,
+      dashboardId: resolutionDashboardRatios.dashboardId,
+    })
     .from(resolutionDashboardRatios)
     .all();
-  const counts = new Map<string, number>();
-  for (const { ratioConfigId } of rows) {
-    counts.set(ratioConfigId, (counts.get(ratioConfigId) ?? 0) + 1);
+  const map: Record<string, string[]> = {};
+  for (const { ratioConfigId, dashboardId } of rows) {
+    (map[ratioConfigId] ??= []).push(dashboardId);
   }
-  return counts;
+  return map;
 }
 
 export async function getStatusContext() {

@@ -5,7 +5,7 @@ import { nanoid } from "nanoid";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import {
   jiraServers,
@@ -15,6 +15,8 @@ import {
 } from "@/lib/db/schema";
 import {
   applyCreateResolutionDashboard,
+  applyDeleteResolutionDashboard,
+  applyReplaceRatioDashboards,
   applyUpdateResolutionDashboard,
 } from "@/lib/db/resolution-mutations";
 
@@ -43,23 +45,19 @@ function seedServer() {
   return id;
 }
 
-function seedRatio(name: string) {
+function seedRatio(name: string, displayOrder = 0) {
   const id = nanoid();
   db
     .insert(ratioConfigs)
-    .values({ id, name, numeratorJql: "issuetype = Bug", denominatorJql: "" })
+    .values({
+      id,
+      name,
+      numeratorJql: "issuetype = Bug",
+      denominatorJql: "",
+      displayOrder,
+    })
     .run();
   return id;
-}
-
-function attachedRatioIds(dashboardId: string) {
-  return db
-    .select()
-    .from(resolutionDashboardRatios)
-    .where(eq(resolutionDashboardRatios.dashboardId, dashboardId))
-    .orderBy(asc(resolutionDashboardRatios.displayOrder))
-    .all()
-    .map((r) => r.ratioConfigId);
 }
 
 const BASE = {
@@ -69,6 +67,20 @@ const BASE = {
   refreshIntervalSec: 600,
   sources: [],
 };
+
+function seedDashboard(name: string) {
+  return applyCreateResolutionDashboard({ name, ...BASE }, db).id;
+}
+
+function dashboardsForRatio(ratioConfigId: string) {
+  return db
+    .select()
+    .from(resolutionDashboardRatios)
+    .where(eq(resolutionDashboardRatios.ratioConfigId, ratioConfigId))
+    .all()
+    .map((r) => r.dashboardId)
+    .sort();
+}
 
 test("create persists milestones for each source", () => {
   const serverId = seedServer();
@@ -91,7 +103,6 @@ test("create persists milestones for each source", () => {
           ],
         },
       ],
-      ratioConfigIds: [],
     },
     db,
   );
@@ -130,7 +141,6 @@ test("update persists milestones (regression for missing column in update insert
           milestones: [],
         },
       ],
-      ratioConfigIds: [],
     },
     db,
   );
@@ -184,7 +194,6 @@ test("update without sources leaves existing milestones intact", () => {
           milestones: [{ name: "v2", date: "2026-04-15" }],
         },
       ],
-      ratioConfigIds: [],
     },
     db,
   );
@@ -204,53 +213,54 @@ test("update without sources leaves existing milestones intact", () => {
   assert.equal(stored[0].name, "v2");
 });
 
-test("create attaches selected ratios in order, dropping unknown and duplicate ids", () => {
-  const r1 = seedRatio("R1");
-  const r2 = seedRatio("R2");
-  const { id } = applyCreateResolutionDashboard(
-    { name: "Board", ...BASE, ratioConfigIds: [r2, r1, r2, "does-not-exist"] },
-    db,
-  );
-  assert.deepEqual(attachedRatioIds(id), [r2, r1]);
+test("applyReplaceRatioDashboards attaches a ratio to multiple dashboards", () => {
+  const r = seedRatio("R");
+  const d1 = seedDashboard("D1");
+  const d2 = seedDashboard("D2");
+  applyReplaceRatioDashboards(r, [d1, d2], db);
+  assert.deepEqual(dashboardsForRatio(r), [d1, d2].sort());
 });
 
-test("update replaces ratio attachments", () => {
-  const r1 = seedRatio("R1");
-  const r2 = seedRatio("R2");
-  const { id } = applyCreateResolutionDashboard(
-    { name: "Board", ...BASE, ratioConfigIds: [r1] },
-    db,
-  );
-  applyUpdateResolutionDashboard(id, { ratioConfigIds: [r2] }, db);
-  assert.deepEqual(attachedRatioIds(id), [r2]);
+test("applyReplaceRatioDashboards replaces the prior selection", () => {
+  const r = seedRatio("R");
+  const d1 = seedDashboard("D1");
+  const d2 = seedDashboard("D2");
+  applyReplaceRatioDashboards(r, [d1], db);
+  applyReplaceRatioDashboards(r, [d2], db);
+  assert.deepEqual(dashboardsForRatio(r), [d2]);
 });
 
-test("update without ratioConfigIds leaves attachments intact", () => {
-  const r1 = seedRatio("R1");
-  const { id } = applyCreateResolutionDashboard(
-    { name: "Board", ...BASE, ratioConfigIds: [r1] },
-    db,
-  );
-  applyUpdateResolutionDashboard(id, { windowDays: 180 }, db);
-  assert.deepEqual(attachedRatioIds(id), [r1]);
+test("applyReplaceRatioDashboards drops unknown and duplicate dashboard ids", () => {
+  const r = seedRatio("R");
+  const d1 = seedDashboard("D1");
+  applyReplaceRatioDashboards(r, [d1, d1, "does-not-exist"], db);
+  assert.deepEqual(dashboardsForRatio(r), [d1]);
 });
 
-test("update with empty ratioConfigIds detaches all ratios", () => {
-  const r1 = seedRatio("R1");
-  const { id } = applyCreateResolutionDashboard(
-    { name: "Board", ...BASE, ratioConfigIds: [r1] },
-    db,
-  );
-  applyUpdateResolutionDashboard(id, { ratioConfigIds: [] }, db);
-  assert.deepEqual(attachedRatioIds(id), []);
+test("applyReplaceRatioDashboards with [] detaches all dashboards", () => {
+  const r = seedRatio("R");
+  const d1 = seedDashboard("D1");
+  applyReplaceRatioDashboards(r, [d1], db);
+  applyReplaceRatioDashboards(r, [], db);
+  assert.deepEqual(dashboardsForRatio(r), []);
 });
 
-test("deleting a ratio config cascades to dashboard attachments", () => {
-  const r1 = seedRatio("R1");
-  const { id } = applyCreateResolutionDashboard(
-    { name: "Board", ...BASE, ratioConfigIds: [r1] },
-    db,
-  );
-  db.delete(ratioConfigs).where(eq(ratioConfigs.id, r1)).run();
-  assert.deepEqual(attachedRatioIds(id), []);
+test("attachment displayOrder follows the ratio's global order", () => {
+  const r = seedRatio("R", 3);
+  const d1 = seedDashboard("D1");
+  applyReplaceRatioDashboards(r, [d1], db);
+  const row = db
+    .select()
+    .from(resolutionDashboardRatios)
+    .where(eq(resolutionDashboardRatios.ratioConfigId, r))
+    .get();
+  assert.equal(row?.displayOrder, 3);
+});
+
+test("deleting a dashboard cascades to its ratio attachments", () => {
+  const r = seedRatio("R");
+  const d1 = seedDashboard("D1");
+  applyReplaceRatioDashboards(r, [d1], db);
+  applyDeleteResolutionDashboard(d1, db);
+  assert.deepEqual(dashboardsForRatio(r), []);
 });
