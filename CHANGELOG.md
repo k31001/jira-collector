@@ -12,6 +12,18 @@
 
 ---
 
+## [1.22.3] — 2026-06-05
+
+### Fixed
+- **트렌드 차트 Y축 라벨 가시성** — v1.22.1 에서 가로 폭을 더 쓰려고 음수 margin(`left: -20, right: -8`)을 둔 것이 라벨 영역을 캔버스 밖으로 밀어내, 좌축 숫자가 안 보이고 우축 3자리 이상 숫자가 잘리는 결과를 낳았습니다.
+  - margin 을 `{top: 8, right: 4, left: 0, bottom: 0}` 으로 정상화.
+  - 좌축 `<YAxis>` width 28 → 40 (4자리까지 여유), 우축 28 → 36 (`2 × peak` 캡 상한도 안전하게 수용).
+  - 결과: 좌측 축에 생성/해결 누적 숫자 tick 이 명확히 표시되고, 우측 미해결 tick 이 끝까지 잘림 없이 보입니다.
+
+[1.22.3]: https://github.com/k31001/jira-collector/releases/tag/v1.22.3
+
+---
+
 ## [1.22.2] — 2026-06-05
 
 ### Changed
@@ -518,5 +530,5 @@
   - `tests/adf.test.ts` — ADF → text 변환
   - `tests/normalize.test.ts` — Done 카테고리 fallback
 
-[Unreleased]: https://github.com/k31001/jira-collector/compare/v1.22.2...HEAD
+[Unreleased]: https://github.com/k31001/jira-collector/compare/v1.22.3...HEAD
 [1.0.0]: https://github.com/k31001/jira-collector/releases/tag/v1.0.0
