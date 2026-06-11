@@ -12,6 +12,17 @@
 
 ---
 
+## [1.23.1] — 2026-06-05
+
+### Fixed
+- **새로고침 버튼이 "최근 코멘트" 를 다시 가져오지 못하던 문제** — 두 가지 결함이 합쳐진 결과였습니다.
+  - `/api/dashboards/[id]/issues` 가 15초 TTL 서버 캐시를 갖고 있는데, 새로고침 버튼이 `?bypass=1` 을 보내지 않아 캐시된 `fetchedAt` 이 그대로 회신 → 클라이언트는 "변경 없음" 으로 판단해 lazy 코멘트 캐시를 비우는 effect 가 안 도는 경우가 있었습니다. 또, **비우는 effect 와 batch fetch effect 가 분리**되어 있어 lazy 캐시가 비워진 뒤 visible page 의 batch fetch 가 다시 트리거되지 않았습니다 (deps 불변).
+  - 수정: 새로고침 클릭 시 `bypassNextFetchRef` 를 세팅해 다음 fetch 에 `?bypass=1` 동봉. `commentsResetEpoch` 카운터를 추가해 lazy 캐시를 비우는 시점에 함께 증가시키고, batch fetch effect 의 deps 에 포함. 결과적으로 새로고침 한 번이면 (a) 상위 캐시 우회 → fresh `fetchedAt`, (b) lazy 코멘트 캐시 wipe, (c) 보이는 페이지 코멘트 재요청이 deterministic 한 순서로 일어납니다. 자동 폴링은 종전 그대로(15초 TTL 만료 후 자연 refresh).
+
+[1.23.1]: https://github.com/k31001/jira-collector/releases/tag/v1.23.1
+
+---
+
 ## [1.23.0] — 2026-06-05
 
 ### Changed
@@ -543,5 +554,5 @@
   - `tests/adf.test.ts` — ADF → text 변환
   - `tests/normalize.test.ts` — Done 카테고리 fallback
 
-[Unreleased]: https://github.com/k31001/jira-collector/compare/v1.22.3...HEAD
+[Unreleased]: https://github.com/k31001/jira-collector/compare/v1.23.1...HEAD
 [1.0.0]: https://github.com/k31001/jira-collector/releases/tag/v1.0.0

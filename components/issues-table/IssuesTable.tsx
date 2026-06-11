@@ -168,12 +168,21 @@ export function IssuesTable({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [columnOrder, dashboardId]);
 
+  // Manual-refresh flag — when the user clicks "새로고침" we want to bypass
+  // the 15s server-side TTL cache on /api/dashboards/[id]/issues, otherwise
+  // the same `fetchedAt` comes back and the visible-page comment batch never
+  // re-fires.
+  const bypassNextFetchRef = React.useRef(false);
+
   const query = useQuery<DashboardIssuesResult>({
     queryKey: ["issues", dashboardId],
     queryFn: async () => {
       // `lite=1` strips the heavy `comment` field from the upstream Jira
       // search. Comments are fetched lazily for the visible page below.
-      const res = await fetch(`/api/dashboards/${dashboardId}/issues?lite=1`, {
+      const bypass = bypassNextFetchRef.current;
+      bypassNextFetchRef.current = false;
+      const params = `?lite=1${bypass ? "&bypass=1" : ""}`;
+      const res = await fetch(`/api/dashboards/${dashboardId}/issues${params}`, {
         cache: "no-store",
       });
       if (!res.ok) throw new Error("이슈 fetch 실패");
@@ -195,8 +204,16 @@ export function IssuesTable({
   const [lazyComments, setLazyComments] = React.useState<
     Record<string, LazyComment | null>
   >({});
+  // Epoch counter bumped in lockstep with lazyComments wipes — the visible
+  // batch fetch effect can't depend on `lazyComments` itself (would create
+  // a self-feedback loop) but it needs a signal to re-fire after a wipe,
+  // otherwise the cleared cache is never repopulated.
+  const [commentsResetEpoch, setCommentsResetEpoch] = React.useState(0);
   React.useEffect(() => {
-    if (query.data?.fetchedAt) setLazyComments({});
+    if (query.data?.fetchedAt) {
+      setLazyComments({});
+      setCommentsResetEpoch((e) => e + 1);
+    }
   }, [query.data?.fetchedAt]);
 
   React.useEffect(() => {
@@ -546,7 +563,7 @@ export function IssuesTable({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleKeysSignature, dashboardId]);
+  }, [visibleKeysSignature, dashboardId, commentsResetEpoch]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -644,7 +661,14 @@ export function IssuesTable({
           ) : null}
         </div>
         <div className="flex-1" />
-        <Button variant="outline" size="sm" onClick={() => query.refetch()}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            bypassNextFetchRef.current = true;
+            query.refetch();
+          }}
+        >
           <RefreshCw className="h-3.5 w-3.5" />
           새로고침
         </Button>
