@@ -14,6 +14,8 @@ import {
   Sliders,
   Tag,
   PlusCircle,
+  PanelLeftClose,
+  PanelLeftOpen,
   Star,
   Timer,
 } from "lucide-react";
@@ -23,6 +25,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 
 type DashboardLink = { id: string; name: string; favorite: boolean };
 
+const COLLAPSE_KEY = "sidebar-collapsed";
+
 export function Sidebar({
   dashboards,
   resolutionDashboards,
@@ -31,6 +35,43 @@ export function Sidebar({
   resolutionDashboards: DashboardLink[];
 }) {
   const pathname = usePathname();
+
+  // Collapsed state lets the user reclaim horizontal space. Server renders
+  // expanded; the persisted choice is applied after mount to avoid a hydration
+  // mismatch. A ref mirrors it so the global key handler reads the latest value.
+  const [collapsed, setCollapsed] = React.useState(false);
+  const collapsedRef = React.useRef(false);
+
+  /* eslint-disable react-hooks/set-state-in-effect */
+  React.useEffect(() => {
+    let stored = false;
+    try {
+      stored = window.localStorage.getItem(COLLAPSE_KEY) === "1";
+    } catch {}
+    collapsedRef.current = stored;
+    setCollapsed(stored);
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  const setCollapsedPersist = React.useCallback((next: boolean) => {
+    collapsedRef.current = next;
+    setCollapsed(next);
+    try {
+      window.localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
+    } catch {}
+  }, []);
+
+  // ⌘B / Ctrl+B toggles the sidebar (mirrors the ⌘K command palette shortcut).
+  React.useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        setCollapsedPersist(!collapsedRef.current);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setCollapsedPersist]);
 
   const sorted = React.useMemo(() => {
     return [...dashboards].sort((a, b) => {
@@ -46,6 +87,25 @@ export function Sidebar({
     });
   }, [resolutionDashboards]);
 
+  // Collapsed: render a slim rail with a reopen button so the menu can always
+  // be brought back (and the theme toggle stays reachable).
+  if (collapsed) {
+    return (
+      <aside className="hidden md:flex w-12 shrink-0 flex-col items-center gap-2 border-r bg-card/40 py-3">
+        <button
+          type="button"
+          onClick={() => setCollapsedPersist(false)}
+          aria-label="사이드바 열기"
+          title="사이드바 열기 (⌘B)"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+        >
+          <PanelLeftOpen className="h-4 w-4" />
+        </button>
+        <ThemeToggle />
+      </aside>
+    );
+  }
+
   return (
     <aside className="hidden md:flex w-64 shrink-0 flex-col border-r bg-card/40">
       <div className="flex h-14 items-center justify-between px-4 border-b">
@@ -53,7 +113,18 @@ export function Sidebar({
           <span className="inline-flex h-6 w-6 items-center justify-center rounded bg-primary text-primary-foreground text-xs">JC</span>
           jira-collector
         </Link>
-        <ThemeToggle />
+        <div className="flex items-center gap-1">
+          <ThemeToggle />
+          <button
+            type="button"
+            onClick={() => setCollapsedPersist(true)}
+            aria-label="사이드바 접기"
+            title="사이드바 접기 (⌘B)"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+          >
+            <PanelLeftClose className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       <nav className="flex-1 overflow-y-auto p-3 space-y-6">
