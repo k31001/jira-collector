@@ -223,6 +223,25 @@ export async function getIssue(
 }
 
 /**
+ * Replace an issue's labels via the edit-issue endpoint
+ * (`PUT /rest/api/{2|3}/issue/{key}`). Jira returns 204 No Content on success.
+ * `labels` is the full desired set — Jira replaces the field wholesale, so the
+ * caller passes the complete list, not a delta.
+ */
+export async function updateIssueLabels(
+  server: JiraServerConfig,
+  key: string,
+  labels: string[],
+): Promise<void> {
+  const cloud = isCloudHost(server.baseUrl);
+  const apiPath = cloud ? "/rest/api/3/issue" : "/rest/api/2/issue";
+  await jiraFetch(server, `${apiPath}/${encodeURIComponent(key)}`, {
+    method: "PUT",
+    body: JSON.stringify({ fields: { labels } }),
+  });
+}
+
+/**
  * Fetch only the most recent comment for a single issue. Used by the lazy
  * comment loader so the issue search can omit the heavy `comment` field.
  *

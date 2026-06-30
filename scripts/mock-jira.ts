@@ -871,6 +871,40 @@ function startServer(opts: { port: number; name: string; issues: (baseUrl: strin
       jsonResponse(res, 200, projected);
       return;
     }
+    // Edit issue (subset): only the `labels` field, used by inline label
+    // editing. Returns 204 No Content like real Jira.
+    if (issueMatch && req.method === "PUT") {
+      const issue = issueMap.get(issueMatch[1].toUpperCase());
+      if (!issue) {
+        jsonResponse(res, 404, { errorMessages: [`Issue ${issueMatch[1]} not found`], errors: {} });
+        return;
+      }
+      try {
+        const body = await readBody(req);
+        const parsed = body
+          ? (JSON.parse(body) as { fields?: { labels?: string[] } })
+          : {};
+        if (Array.isArray(parsed.fields?.labels)) {
+          const labels = parsed.fields.labels;
+          if (labels.some((l) => /\s/.test(l))) {
+            jsonResponse(res, 400, {
+              errorMessages: [],
+              errors: { labels: "A label cannot contain spaces." },
+            });
+            return;
+          }
+          issue.fields.labels = labels;
+        }
+        res.statusCode = 204;
+        res.end();
+      } catch (err) {
+        jsonResponse(res, 400, {
+          errorMessages: [`Edit error: ${(err as Error).message}`],
+          errors: {},
+        });
+      }
+      return;
+    }
     // Dedicated paginated changelog endpoint (Jira Cloud style).
     const changelogMatch = url.pathname.match(
       /^\/rest\/api\/2\/issue\/([A-Z][A-Z0-9_]*-\d+)\/changelog$/i,

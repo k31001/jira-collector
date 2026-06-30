@@ -71,6 +71,7 @@ import { NoteCell } from "./NoteCell";
 import { StatusStatsBar } from "./StatusStatsBar";
 import { TrendChart } from "./TrendChart";
 import { FacetCharts } from "./FacetCharts";
+import { LabelsCell } from "./LabelsCell";
 import { ReportDialog } from "./ReportDialog";
 import {
   ALL_COLUMNS,
@@ -431,15 +432,12 @@ export function IssuesTable({
         header: "Labels",
         enableSorting: false,
         cell: ({ row }) => (
-          <div className="flex flex-wrap gap-1">
-            {row.original.labels.slice(0, 5).map((l) => (
-              <span
-                key={l}
-                className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground"
-              >
-                {l}
-              </span>
-            ))}
+          <div className="min-w-[160px] max-w-[280px]">
+            <LabelsCell
+              serverId={row.original.serverId}
+              issueKey={row.original.key}
+              initial={row.original.labels}
+            />
           </div>
         ),
       },

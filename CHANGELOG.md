@@ -12,6 +12,20 @@
 
 ---
 
+## [1.26.0] — 2026-06-30
+
+### Added
+- **대시보드에서 Labels 인라인 편집** — 이슈 테이블의 `Labels` 컬럼을 클릭하면 상세 화면 진입 없이 바로 편집할 수 있습니다. 쉼표/공백으로 라벨을 구분해 입력하고 Enter(또는 포커스 아웃)로 저장, Esc 로 취소합니다. 저장 시 Jira 의 이슈 편집 API(`PUT /rest/api/{2|3}/issue/{key}`)로 라벨 전체를 교체하며, 낙관적 업데이트 후 실패 시 이전 값으로 되돌리고 토스트로 알립니다.
+  - Jira 클라이언트에 `updateIssueLabels` 추가(Cloud/Server API 버전 자동 선택), 서버 액션 `actions/issues.ts` 에서 서버 자격증명을 복호화해 호출합니다. 라벨은 trim·중복 제거하며, Jira 가 허용하지 않는 **공백 포함 라벨**은 호출 전에 막습니다.
+  - IME 조합 중 마지막 글자 누락을 피하기 위해 저장 시 살아있는 입력값을 직접 읽습니다(메모 셀과 동일한 처리).
+
+### Dev
+- 로컬 목 Jira(`scripts/mock-jira.ts`)에 `PUT /rest/api/2/issue/:key`(labels 한정) 핸들러를 추가해 인라인 라벨 편집을 목 환경에서 검증할 수 있게 했습니다.
+
+[1.26.0]: https://github.com/k31001/jira-collector/releases/tag/v1.26.0
+
+---
+
 ## [1.25.0] — 2026-06-30
 
 ### Added
