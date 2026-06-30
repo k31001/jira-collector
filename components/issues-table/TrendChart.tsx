@@ -110,11 +110,13 @@ const STORAGE_KEY = (dashboardId: string) => `trend-chart:${dashboardId}`;
 
 type Persisted = { open: boolean; days: number; size: number };
 
+const DEFAULT_PREFS: Persisted = { open: true, days: 30, size: 1 };
+
 function loadPrefs(dashboardId: string): Persisted {
-  if (typeof window === "undefined") return { open: true, days: 30, size: 1 };
+  if (typeof window === "undefined") return DEFAULT_PREFS;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY(dashboardId));
-    if (!raw) return { open: true, days: 30, size: 1 };
+    if (!raw) return DEFAULT_PREFS;
     const parsed = JSON.parse(raw) as Partial<Persisted>;
     const validSizes = SIZE_OPTIONS.map((s) => s.value);
     return {
@@ -126,7 +128,7 @@ function loadPrefs(dashboardId: string): Persisted {
           : 1,
     };
   } catch {
-    return { open: true, days: 30, size: 1 };
+    return DEFAULT_PREFS;
   }
 }
 
@@ -137,18 +139,37 @@ export function TrendChart({
   dashboardId: string;
   issues: NormalizedIssue[];
 }) {
-  const [{ open, days, size }, setPrefs] = React.useState<Persisted>(() =>
-    loadPrefs(dashboardId),
-  );
+  // Start from the SSR-safe default so the server and the first client render
+  // agree. Reading localStorage in the useState initializer made the server
+  // render size 1 while the client rendered the stored size, producing a
+  // hydration mismatch ("won't be patched up") — under React's recovery the
+  // chart could snap back to 1x and the persist effect below would then write
+  // that 1x to storage, permanently losing the user's setting.
+  const [{ open, days, size }, setPrefs] = React.useState<Persisted>(DEFAULT_PREFS);
+  const [loaded, setLoaded] = React.useState(false);
 
+  // Apply persisted prefs after mount, once we're safely on the client. The
+  // setState-in-effect is deliberate: it's the post-hydration hand-off from the
+  // SSR-safe default to the stored value, and avoids the hydration mismatch
+  // that reading localStorage during render would cause.
+  /* eslint-disable react-hooks/set-state-in-effect */
   React.useEffect(() => {
+    setPrefs(loadPrefs(dashboardId));
+    setLoaded(true);
+  }, [dashboardId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Persist on change — but only after the initial load has run, otherwise the
+  // first render's defaults would overwrite the stored prefs.
+  React.useEffect(() => {
+    if (!loaded) return;
     try {
       window.localStorage.setItem(
         STORAGE_KEY(dashboardId),
         JSON.stringify({ open, days, size }),
       );
     } catch {}
-  }, [dashboardId, open, days, size]);
+  }, [dashboardId, loaded, open, days, size]);
 
   const data = React.useMemo(() => buildSeries(issues, days), [issues, days]);
 

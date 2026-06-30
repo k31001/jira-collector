@@ -12,6 +12,16 @@
 
 ---
 
+## [1.23.2] — 2026-06-30
+
+### Fixed
+- **메모 `Cmd/Ctrl+Enter` 저장 시 마지막 글자가 누락되던 문제** — 한글처럼 IME 조합이 필요한 입력에서, 조합 중인 음절은 `onChange` 가 React state 로 flush 되기 한 프레임 전까지 `<textarea>` DOM 에만 존재합니다. 단축키 저장이 React state(`value`)를 저장하던 탓에 방금 입력한 글자가 빠진 채 저장되고 편집창이 닫혔습니다. 이제 저장 시점에 살아있는 `<textarea>` 값을 직접 읽어 보이는 그대로 저장합니다(버튼/블러 저장 경로도 동일하게 통일).
+- **트렌드 그래프 높이(1x/1.2x/1.5x/2x)가 화면 이동 후 1x 로 리셋되던 문제** — 저장값을 `useState` 초기화 함수에서 localStorage 로 읽던 탓에 서버 렌더(기본 1x)와 클라이언트 렌더(저장값)가 어긋나 hydration mismatch("won't be patched up")가 났고, React 의 복구 과정에서 1x 로 되돌아간 뒤 영속화 effect 가 그 1x 를 다시 저장해 설정이 영구적으로 사라질 수 있었습니다. 이제 SSR 안전 기본값으로 시작한 뒤 마운트 후 저장값을 적용하고, 최초 로드 전에는 영속화하지 않도록 게이트해 mismatch 와 클로버(clobber)를 모두 제거했습니다.
+
+[1.23.2]: https://github.com/k31001/jira-collector/releases/tag/v1.23.2
+
+---
+
 ## [1.23.1] — 2026-06-05
 
 ### Fixed

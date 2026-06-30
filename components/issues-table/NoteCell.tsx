@@ -60,10 +60,20 @@ export function NoteCell({ dashboardId, serverId, issueKey, initial }: Props) {
     debounceRef.current = setTimeout(() => persist(v), 500);
   }
 
-  function onBlur() {
+  // Persist `text` and leave edit mode. Always read the caller's text from the
+  // live <textarea> rather than React state — during IME composition (Korean,
+  // etc.) the in-progress syllable lives in the DOM a frame before onChange
+  // flushes it to state, so saving `value` here would silently drop the last
+  // character the user typed.
+  function commit(text: string) {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    persist(value);
+    setValue(text);
+    persist(text);
     setEditing(false);
+  }
+
+  function onBlur() {
+    commit(textareaRef.current?.value ?? value);
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -71,10 +81,11 @@ export function NoteCell({ dashboardId, serverId, issueKey, initial }: Props) {
       e.preventDefault();
       setValue(lastSavedRef.current);
       setEditing(false);
+      return;
     }
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
-      onBlur();
+      commit(textareaRef.current?.value ?? value);
     }
   }
 
