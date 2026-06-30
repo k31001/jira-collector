@@ -78,9 +78,30 @@ import {
   reconcileColumnOrder,
   type ColumnKey,
 } from "./columns";
+import { SmartFilters } from "@/components/resolution-time/SmartFilters";
+import {
+  applyFacets,
+  buildFacets,
+  type FacetSelection,
+} from "@/lib/resolution-time";
 import type { DashboardIssuesResult, NormalizedIssue } from "@/lib/jira/types";
 import { cn, formatDate, formatRelative, truncate } from "@/lib/utils";
 import { updateDashboard } from "@/actions/dashboards";
+
+const FILTERS_STORAGE_KEY = (dashboardId: string) =>
+  `dashboard-filters:${dashboardId}`;
+
+function loadFacetSelection(dashboardId: string): FacetSelection {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(FILTERS_STORAGE_KEY(dashboardId));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as FacetSelection;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
 
 type Props = {
   dashboardId: string;
@@ -105,6 +126,27 @@ export function IssuesTable({
     { id: "updated", desc: true },
   ]);
   const [statusFilter, setStatusFilter] = React.useState<Set<string>>(new Set());
+
+  // Smart-filter facet selection. Start empty (SSR-safe) and hydrate from
+  // localStorage after mount, then persist on change once loaded — same shape
+  // as the trend-chart prefs, to avoid an SSR/client hydration mismatch.
+  const [facetSelection, setFacetSelection] = React.useState<FacetSelection>({});
+  const [filtersLoaded, setFiltersLoaded] = React.useState(false);
+  /* eslint-disable react-hooks/set-state-in-effect */
+  React.useEffect(() => {
+    setFacetSelection(loadFacetSelection(dashboardId));
+    setFiltersLoaded(true);
+  }, [dashboardId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+  React.useEffect(() => {
+    if (!filtersLoaded) return;
+    try {
+      window.localStorage.setItem(
+        FILTERS_STORAGE_KEY(dashboardId),
+        JSON.stringify(facetSelection),
+      );
+    } catch {}
+  }, [dashboardId, filtersLoaded, facetSelection]);
 
   const [pagination, setPagination] = React.useState<PaginationState>(() => {
     if (typeof window === "undefined") return { pageIndex: 0, pageSize: 30 };
@@ -450,10 +492,19 @@ export function IssuesTable({
     return out;
   }, [data]);
 
+  // Facet options reflect the full corpus so the dropdowns stay stable while
+  // selecting; the apply step then narrows the rows.
+  const facets = React.useMemo(() => buildFacets(data), [data]);
+
+  const facetFiltered = React.useMemo(
+    () => applyFacets(data, facetSelection),
+    [data, facetSelection],
+  );
+
   const afterStatusFilter = React.useMemo(() => {
-    if (statusFilter.size === 0) return data;
-    return data.filter((i) => statusFilter.has(i.effectiveStatus.label));
-  }, [data, statusFilter]);
+    if (statusFilter.size === 0) return facetFiltered;
+    return facetFiltered.filter((i) => statusFilter.has(i.effectiveStatus.label));
+  }, [facetFiltered, statusFilter]);
 
   const filtered = React.useMemo(() => {
     if (!search.trim()) return afterStatusFilter;
@@ -499,7 +550,7 @@ export function IssuesTable({
   // stranded on a no-longer-existent page.
   React.useEffect(() => {
     setPagination((p) => (p.pageIndex === 0 ? p : { ...p, pageIndex: 0 }));
-  }, [search, statusFilter, filtered.length]);
+  }, [search, statusFilter, facetSelection, filtered.length]);
 
   // Compute the (serverId, key) pairs for the currently-rendered page. Used
   // to drive the lazy comment batch loader below.
@@ -633,10 +684,20 @@ export function IssuesTable({
       />
       <TrendChart dashboardId={dashboardId} issues={data} />
       <StatusStatsBar
-        issues={data}
+        issues={facetFiltered}
         selected={statusFilter}
         onChange={setStatusFilter}
       />
+
+      {data.length > 0 && (
+        <div className="border-t px-6 py-2">
+          <SmartFilters
+            facets={facets}
+            value={facetSelection}
+            onChange={setFacetSelection}
+          />
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2 px-6 py-2 border-t">
         <div className="relative flex-1 min-w-[200px] max-w-md">

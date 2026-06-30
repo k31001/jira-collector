@@ -12,6 +12,17 @@
 
 ---
 
+## [1.24.0] — 2026-06-30
+
+### Added
+- **일반 대시보드 스마트 필터** — 해결 시간 대시보드에만 있던 facet 기반 스마트 필터(상태·담당자·타입·우선순위·라벨·보고자)를 일반 대시보드(이슈 테이블)에도 적용했습니다. 트렌드/상태 바 아래에 필터 행이 추가되고, 선택 즉시 표가 좁혀지며 상태 통계 바의 카운트도 필터 결과를 반영합니다.
+  - 기존 `buildFacets`/`applyFacets`(`lib/resolution-time`)와 `SmartFilters` 컴포넌트를 그대로 재사용 — 둘 다 `NormalizedIssue[]` 위에서 동작하므로 중복 구현 없이 연결했습니다.
+  - 선택 상태는 대시보드별 `dashboard-filters:{id}` 로 localStorage 영속화. 트렌드 차트 수정과 동일하게 SSR 안전 기본값(`{}`)으로 시작해 마운트 후 로드하고, 최초 로드 전에는 저장하지 않아 hydration mismatch 를 피합니다.
+
+[1.24.0]: https://github.com/k31001/jira-collector/releases/tag/v1.24.0
+
+---
+
 ## [1.23.2] — 2026-06-30
 
 ### Fixed
