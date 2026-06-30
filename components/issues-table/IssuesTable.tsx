@@ -70,6 +70,7 @@ import { StatusBadge } from "./StatusBadge";
 import { NoteCell } from "./NoteCell";
 import { StatusStatsBar } from "./StatusStatsBar";
 import { TrendChart } from "./TrendChart";
+import { FacetCharts } from "./FacetCharts";
 import { ReportDialog } from "./ReportDialog";
 import {
   ALL_COLUMNS,
@@ -132,12 +133,10 @@ export function IssuesTable({
   // as the trend-chart prefs, to avoid an SSR/client hydration mismatch.
   const [facetSelection, setFacetSelection] = React.useState<FacetSelection>({});
   const [filtersLoaded, setFiltersLoaded] = React.useState(false);
-  /* eslint-disable react-hooks/set-state-in-effect */
   React.useEffect(() => {
     setFacetSelection(loadFacetSelection(dashboardId));
     setFiltersLoaded(true);
   }, [dashboardId]);
-  /* eslint-enable react-hooks/set-state-in-effect */
   React.useEffect(() => {
     if (!filtersLoaded) return;
     try {
@@ -697,6 +696,10 @@ export function IssuesTable({
             onChange={setFacetSelection}
           />
         </div>
+      )}
+
+      {data.length > 0 && (
+        <FacetCharts dashboardId={dashboardId} issues={facetFiltered} />
       )}
 
       <div className="flex flex-wrap items-center gap-2 px-6 py-2 border-t">
