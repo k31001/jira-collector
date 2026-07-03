@@ -43,6 +43,8 @@ const sourceSchema = z.object({
     .regex(/^#[0-9a-fA-F]{6}$/, "컬러는 #RRGGBB 형식이어야 합니다")
     .default("#3B82F6"),
   milestones: z.array(milestoneSchema).default([]),
+  // Time-axis alignment offset in days (positive = shift forward). ±10 years.
+  timeOffsetDays: z.number().int().min(-3650).max(3650).default(0),
 });
 
 export const resolutionDashboardInputSchema = z.object({
@@ -156,6 +158,7 @@ export function applyCreateResolutionDashboard(
         jql: s.jql,
         color: s.color,
         milestones: JSON.stringify(s.milestones),
+        timeOffsetDays: s.timeOffsetDays,
         displayOrder: i,
       })
       .run();
@@ -203,6 +206,7 @@ export function applyUpdateResolutionDashboard(
           jql: s.jql,
           color: s.color,
           milestones: JSON.stringify(s.milestones ?? []),
+          timeOffsetDays: s.timeOffsetDays,
           displayOrder: i,
         })
         .run();

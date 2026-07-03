@@ -38,6 +38,8 @@ export type ResolutionSourceItem = {
   jql: string;
   color: string;
   milestones: Milestone[];
+  /** Days to shift this series on the time axis (positive = forward). */
+  timeOffsetDays: number;
 };
 
 type FormState = {
@@ -120,6 +122,7 @@ export function ResolutionDashboardForm({ mode, servers, initial }: Props) {
           jql: "",
           color: DEFAULT_COLORS[s.sources.length % DEFAULT_COLORS.length],
           milestones: [],
+          timeOffsetDays: 0,
         },
       ],
     }));
@@ -413,6 +416,28 @@ function ResolutionSourceCard({
           />
           <p className="text-[11px] text-muted-foreground">
             팁: 해결된 이슈만 분석되므로 <code>resolved &gt;= -90d</code> 같은 조건을 함께 거는 것이 좋습니다.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label>시간축 오프셋 (일)</Label>
+          <Input
+            type="number"
+            min={-3650}
+            max={3650}
+            value={source.timeOffsetDays}
+            onChange={(e) => {
+              const n = Math.trunc(Number(e.target.value));
+              onChange({ timeOffsetDays: Number.isFinite(n) ? n : 0 });
+            }}
+            className="w-[150px]"
+          />
+          <p className="text-[11px] text-muted-foreground">
+            이 JQL의 시계열을 지정한 일수만큼 이동시켜 표시합니다 (양수 =
+            미래로). 시작 시점이 다른 프로젝트끼리 같은 시간축에서 추이를
+            비교할 때 사용하세요. 추이·미해결·처리량·비율 차트와 마일스톤에만
+            적용되고, 해결 시간 값 자체(요약·분포·슬로우 분석)는 바뀌지
+            않습니다.
           </p>
         </div>
 

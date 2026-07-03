@@ -162,6 +162,51 @@ export function buildHistogram(
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Time-axis offset                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Shift an issue set's calendar timestamps by `offsetDays` (positive =
+ * forward). Lets series from projects that ran at different times be
+ * compared on the same X axis ("2달 전에 시작한 프로젝트를 지금 것과 겹쳐
+ * 보기"). Durations are preserved — created/resolved/updated all move by the
+ * same amount — so this must only feed time-axis bucketing, never duration
+ * stats (histogram, aging) or current-state analyses.
+ */
+export function shiftIssuesTime<T extends NormalizedIssue>(
+  issues: T[],
+  offsetDays: number,
+): T[] {
+  if (!offsetDays) return issues;
+  const ms = offsetDays * MS_PER_DAY;
+  const shift = (iso: string | undefined): string | undefined => {
+    if (!iso) return iso;
+    const t = Date.parse(iso);
+    if (!Number.isFinite(t)) return iso;
+    return new Date(t + ms).toISOString();
+  };
+  return issues.map((i) => ({
+    ...i,
+    created: shift(i.created),
+    resolved: shift(i.resolved),
+    updated: shift(i.updated),
+  }));
+}
+
+/** Shift a YYYY-MM-DD date string by `offsetDays`, keeping the format. */
+export function shiftDateOnly(date: string, offsetDays: number): string {
+  if (!offsetDays) return date;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!m) return date;
+  const d = new Date(
+    Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + offsetDays),
+  );
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  return `${d.getUTCFullYear()}-${mm}-${dd}`;
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Time series                                                                */
 /* -------------------------------------------------------------------------- */
 

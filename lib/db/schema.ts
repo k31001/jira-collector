@@ -130,6 +130,10 @@ export const resolutionDashboardSources = sqliteTable(
     color: text("color").notNull().default("#3B82F6"),
     displayOrder: integer("display_order").notNull().default(0),
     milestones: text("milestones").notNull().default("[]"),
+    // Days to shift this source on the time axis (positive = forward), so
+    // series from projects that ran at different times can be compared on
+    // the same X axis. Affects time-axis charts only, not durations.
+    timeOffsetDays: integer("time_offset_days").notNull().default(0),
   },
   (t) => ({
     byDashboard: index("resolution_dashboard_sources_dashboard_idx").on(t.dashboardId),

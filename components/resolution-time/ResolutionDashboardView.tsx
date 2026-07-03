@@ -30,6 +30,8 @@ import {
   buildHistogram,
   buildTimeSeries,
   buildUnresolvedTimeSeries,
+  shiftDateOnly,
+  shiftIssuesTime,
   statsForSource,
   withAging,
   withResolutionHours,
@@ -428,33 +430,48 @@ export function ResolutionDashboardView({
     [perSource, visibleJqls],
   );
 
+  // Time-axis charts honor each source's `timeOffsetDays` so series from
+  // projects that ran at different times can be overlaid ("2달 전에 시작한
+  // 프로젝트를 지금 것과 겹쳐 보기"). Durations are unaffected, so summary
+  // stats, histogram, aging and long-tail keep using real dates. A shifted
+  // series is annotated in its label so nobody misreads the calendar.
   const series: Series[] = React.useMemo(
     () =>
-      perSource.map((ps) => ({
-        sourceId: ps.source.sourceId,
-        label: ps.source.label,
-        color: ps.source.color,
-        points: buildTimeSeries(ps.resolved, windowDays, timeBucket),
-        unresolved: buildUnresolvedTimeSeries(
-          ps.filteredIssues,
-          windowDays,
-          timeBucket,
-        ),
-      })),
+      perSource.map((ps) => {
+        const off = ps.source.timeOffsetDays ?? 0;
+        return {
+          sourceId: ps.source.sourceId,
+          label: off
+            ? `${ps.source.label} (${off > 0 ? "+" : ""}${off}일 이동)`
+            : ps.source.label,
+          color: ps.source.color,
+          points: buildTimeSeries(
+            shiftIssuesTime(ps.resolved, off),
+            windowDays,
+            timeBucket,
+          ),
+          unresolved: buildUnresolvedTimeSeries(
+            shiftIssuesTime(ps.filteredIssues, off),
+            windowDays,
+            timeBucket,
+          ),
+        };
+      }),
     [perSource, windowDays, timeBucket],
   );
 
   const milestoneMarks: MilestoneMark[] = React.useMemo(
     () =>
-      sources.flatMap((s) =>
-        (s.milestones ?? []).map((m) => ({
+      sources.flatMap((s) => {
+        const off = s.timeOffsetDays ?? 0;
+        return (s.milestones ?? []).map((m) => ({
           sourceId: s.sourceId,
           sourceLabel: s.label,
           color: s.color,
           name: m.name,
-          date: m.date,
-        })),
-      ),
+          date: shiftDateOnly(m.date, off),
+        }));
+      }),
     [sources],
   );
 
@@ -635,7 +652,10 @@ export function ResolutionDashboardView({
                 sourceId: ps.source.sourceId,
                 label: ps.source.label,
                 color: ps.source.color,
-                issues: ps.filteredIssues,
+                issues: shiftIssuesTime(
+                  ps.filteredIssues,
+                  ps.source.timeOffsetDays ?? 0,
+                ),
               }))}
               windowDays={windowDays}
               bucket={timeBucket}

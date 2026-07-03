@@ -101,6 +101,7 @@ test("create persists milestones for each source", () => {
             { name: "v2 릴리즈", date: "2026-04-15" },
             { name: "SLA 변경", date: "2026-05-01" },
           ],
+          timeOffsetDays: 0,
         },
       ],
     },
@@ -139,6 +140,7 @@ test("update persists milestones (regression for missing column in update insert
           jql: "project = PROJ",
           color: "#3B82F6",
           milestones: [],
+          timeOffsetDays: 0,
         },
       ],
     },
@@ -155,6 +157,7 @@ test("update persists milestones (regression for missing column in update insert
           jql: "project = PROJ",
           color: "#3B82F6",
           milestones: [{ name: "v2 릴리즈", date: "2026-04-15" }],
+          timeOffsetDays: -14,
         },
       ],
     },
@@ -174,6 +177,41 @@ test("update persists milestones (regression for missing column in update insert
   assert.equal(stored.length, 1, "milestone added via update must persist");
   assert.equal(stored[0].name, "v2 릴리즈");
   assert.equal(stored[0].date, "2026-04-15");
+  assert.equal(
+    row!.timeOffsetDays,
+    -14,
+    "time offset set via update must persist",
+  );
+});
+
+test("create defaults timeOffsetDays to 0 when omitted", () => {
+  const serverId = seedServer();
+  const { id } = applyCreateResolutionDashboard(
+    {
+      name: "Test Board",
+      windowDays: 90,
+      timeBucket: "week",
+      histogramBucketHours: 24,
+      refreshIntervalSec: 600,
+      sources: [
+        // Pre-offset payload shape (regression: zod default must fill it in).
+        {
+          serverId,
+          label: "Team A",
+          jql: "project = PROJ",
+          color: "#3B82F6",
+          milestones: [],
+        } as never,
+      ],
+    },
+    db,
+  );
+  const row = db
+    .select()
+    .from(resolutionDashboardSources)
+    .where(eq(resolutionDashboardSources.dashboardId, id))
+    .get();
+  assert.equal(row!.timeOffsetDays, 0);
 });
 
 test("update without sources leaves existing milestones intact", () => {
@@ -192,6 +230,7 @@ test("update without sources leaves existing milestones intact", () => {
           jql: "project = PROJ",
           color: "#3B82F6",
           milestones: [{ name: "v2", date: "2026-04-15" }],
+          timeOffsetDays: 30,
         },
       ],
     },

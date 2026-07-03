@@ -60,6 +60,7 @@ export default async function EditResolutionDashboardPage({
       jql: s.jql,
       color: s.color,
       milestones,
+      timeOffsetDays: s.timeOffsetDays ?? 0,
     };
   });
 

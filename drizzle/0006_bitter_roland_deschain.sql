@@ -1,0 +1,1 @@
+ALTER TABLE `resolution_dashboard_sources` ADD `time_offset_days` integer DEFAULT 0 NOT NULL;

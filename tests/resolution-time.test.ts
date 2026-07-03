@@ -22,6 +22,8 @@ import {
   buildBugRateSeries,
   buildRatioSeries,
   isBugType,
+  shiftDateOnly,
+  shiftIssuesTime,
   type ResolvedIssue,
 } from "@/lib/resolution-time";
 import type { NormalizedIssue } from "@/lib/jira/types";
@@ -368,6 +370,53 @@ test("buildHistogram count and issues stay in sync", () => {
   for (const b of hist) {
     assert.equal(b.count, b.issues.length);
   }
+});
+
+/* --------------------------- time-axis offset ---------------------------- */
+
+test("shiftIssuesTime moves calendar dates but preserves durations", () => {
+  const issue = Object.assign(
+    makeIssue({
+      created: "2026-05-01T00:00:00.000Z",
+      resolved: "2026-05-03T00:00:00.000Z",
+      updated: "2026-05-02T12:00:00.000Z",
+    }),
+    { resolutionHours: 48 },
+  );
+  const [shifted] = shiftIssuesTime([issue], 30);
+  assert.equal(shifted.created, "2026-05-31T00:00:00.000Z");
+  assert.equal(shifted.resolved, "2026-06-02T00:00:00.000Z");
+  assert.equal(shifted.updated, "2026-06-01T12:00:00.000Z");
+  // Duration unchanged: created→resolved is still 48h
+  assert.equal(calculateResolutionHours(shifted), 48);
+  // Negative offsets shift backward; zero is a no-op returning the same array
+  const [back] = shiftIssuesTime([issue], -1);
+  assert.equal(back.created, "2026-04-30T00:00:00.000Z");
+  assert.equal(shiftIssuesTime([issue], 0)[0], issue);
+});
+
+test("shiftIssuesTime lands issues in the shifted time-series bucket", () => {
+  const now = new Date("2026-06-15T12:00:00Z");
+  const issue = Object.assign(
+    makeIssue({
+      created: "2026-05-01T00:00:00Z",
+      resolved: "2026-05-02T00:00:00Z",
+    }),
+    { resolutionHours: 24 },
+  );
+  const plain = buildTimeSeries([issue], 60, "day", now);
+  const shifted = buildTimeSeries(shiftIssuesTime([issue], 10), 60, "day", now);
+  assert.equal(plain.find((p) => p.date === "2026-05-02")?.count, 1);
+  assert.equal(shifted.find((p) => p.date === "2026-05-02")?.count, 0);
+  assert.equal(shifted.find((p) => p.date === "2026-05-12")?.count, 1);
+});
+
+test("shiftDateOnly shifts YYYY-MM-DD across month/year boundaries", () => {
+  assert.equal(shiftDateOnly("2026-05-15", 0), "2026-05-15");
+  assert.equal(shiftDateOnly("2026-05-31", 1), "2026-06-01");
+  assert.equal(shiftDateOnly("2026-01-01", -1), "2025-12-31");
+  assert.equal(shiftDateOnly("2026-05-15", 30), "2026-06-14");
+  assert.equal(shiftDateOnly("not-a-date", 5), "not-a-date");
 });
 
 /* ----------------------------- time series ------------------------------- */

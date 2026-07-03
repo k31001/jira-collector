@@ -42,6 +42,8 @@ export type ResolutionSourceResult = {
   serverName: string;
   jql: string;
   milestones: Milestone[];
+  /** Days to shift this source on the time axis (0 = no shift). */
+  timeOffsetDays: number;
   issues: NormalizedIssue[];
   /** True when the fetch hit RESOLUTION_ISSUE_LIMIT (results may be partial). */
   capped: boolean;
@@ -197,6 +199,7 @@ export async function fetchResolutionDashboardIssues(
         serverName,
         jql: s.jql,
         milestones,
+        timeOffsetDays: s.timeOffsetDays ?? 0,
         issues: [],
         capped: false,
         error: null,
