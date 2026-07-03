@@ -4,11 +4,17 @@ import {
   getNotesForDashboard,
   getServerConfig,
   getStatusContext,
+  listCustomFacetFieldIds,
   listSourcesForDashboard,
 } from "@/lib/db/queries";
 import type { DashboardIssuesResult, NormalizedIssue, SourceError } from "./types";
 import { JiraError } from "./types";
-import { DEFAULT_FIELDS_NO_COMMENT, getIssue, searchIssues } from "./client";
+import {
+  DEFAULT_FIELDS,
+  DEFAULT_FIELDS_NO_COMMENT,
+  getIssue,
+  searchIssues,
+} from "./client";
 import { normalizeIssue } from "./normalize";
 import { parseIssueList } from "./url-parser";
 import { db } from "@/lib/db/client";
@@ -65,6 +71,14 @@ export async function fetchDashboardIssues(
     noteMap.set(`${n.serverId}::${n.issueKey}`, n.content);
   }
 
+  // Base fields plus the custom fields referenced by custom smart-filter
+  // facets — without them the facet JQL (cf[NNNNN] = …) has no values to
+  // match against and the filter silently matches nothing.
+  const fields = [
+    ...(lite ? DEFAULT_FIELDS_NO_COMMENT : DEFAULT_FIELDS),
+    ...listCustomFacetFieldIds(),
+  ];
+
   const issues: NormalizedIssue[] = [];
   const errors: SourceError[] = [];
   const seen = new Set<string>();
@@ -88,7 +102,7 @@ export async function fetchDashboardIssues(
         if (source.sourceType === "jql") {
           if (!source.jql || !source.jql.trim()) return;
           const raws = await searchIssues(serverConfig, source.jql, {
-            fields: lite ? DEFAULT_FIELDS_NO_COMMENT : undefined,
+            fields,
           });
           for (const r of raws) {
             const key = `${serverConfig.id}::${r.key}`;
@@ -135,7 +149,7 @@ export async function fetchDashboardIssues(
             URL_CONCURRENCY,
             (p) =>
               getIssue(serverConfig, p.issueKey, {
-                fields: lite ? DEFAULT_FIELDS_NO_COMMENT : undefined,
+                fields,
               }),
           );
           fetchResults.forEach((r, i) => {

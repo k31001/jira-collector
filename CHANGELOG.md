@@ -12,6 +12,17 @@
 
 ---
 
+## [1.30.0] — 2026-07-03
+
+### Added
+- **일반 대시보드 커스텀 스마트 필터** — `/settings/smart-filters` 에서 정의한 커스텀 facet이 해결 시간 대시보드뿐 아니라 일반 대시보드(이슈 테이블)의 스마트 필터 행에도 노출됩니다. 선택은 `dashboard-custom-filters:{id}` 로 대시보드별 localStorage 에 저장되고, 필터 결과는 테이블·상태 통계 바·분포 차트에 모두 반영됩니다.
+  - 일반 대시보드 fetch(`fetchDashboardIssues`)가 커스텀 스마트 필터가 참조하는 커스텀 필드(`cf[NNNNN]`)를 취합해 함께 요청합니다 — 기존에는 기본 필드만 요청해 커스텀 facet JQL이 매칭할 값이 없었습니다. 취합 로직은 `listCustomFacetFieldIds()` 로 공유해 해결 시간 fetch와 동일 경로를 사용합니다.
+  - 참조 필드 지문을 이슈 쿼리 키에 포함해(1.29.1과 동일 패턴), 스마트 필터 설정에서 필드를 추가하면 일반 대시보드도 로딩 시 즉시 새 필드를 포함해 다시 불러옵니다.
+
+[1.30.0]: https://github.com/k31001/jira-collector/releases/tag/v1.30.0
+
+---
+
 ## [1.29.1] — 2026-07-03
 
 ### Fixed

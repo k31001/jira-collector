@@ -82,16 +82,23 @@ import {
 } from "./columns";
 import { SmartFilters } from "@/components/resolution-time/SmartFilters";
 import {
+  applyCustomFacets,
   applyFacets,
   buildFacets,
+  type CustomFacetForFilter,
+  type CustomFacetSelection,
   type FacetSelection,
 } from "@/lib/resolution-time";
+import { customFieldFingerprint, tryCompileJql } from "@/lib/jql-eval";
+import type { CustomFacetWithValues } from "@/lib/db/queries";
 import type { DashboardIssuesResult, NormalizedIssue } from "@/lib/jira/types";
 import { cn, formatDate, formatRelative, truncate } from "@/lib/utils";
 import { updateDashboard } from "@/actions/dashboards";
 
 const FILTERS_STORAGE_KEY = (dashboardId: string) =>
   `dashboard-filters:${dashboardId}`;
+const CUSTOM_FILTERS_STORAGE_KEY = (dashboardId: string) =>
+  `dashboard-custom-filters:${dashboardId}`;
 
 function loadFacetSelection(dashboardId: string): FacetSelection {
   if (typeof window === "undefined") return {};
@@ -105,12 +112,27 @@ function loadFacetSelection(dashboardId: string): FacetSelection {
   }
 }
 
+function loadCustomFacetSelection(dashboardId: string): CustomFacetSelection {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(
+      CUSTOM_FILTERS_STORAGE_KEY(dashboardId),
+    );
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as CustomFacetSelection;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 type Props = {
   dashboardId: string;
   dashboardName: string;
   refreshIntervalSec: number;
   initialVisibleColumns: ColumnKey[];
   initialColumnOrder: ColumnKey[];
+  customFacets: CustomFacetWithValues[];
 };
 
 const PAGE_SIZES = [10, 30, 60];
@@ -121,6 +143,7 @@ export function IssuesTable({
   refreshIntervalSec,
   initialVisibleColumns,
   initialColumnOrder,
+  customFacets,
 }: Props) {
   const [reportOpen, setReportOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
@@ -133,9 +156,12 @@ export function IssuesTable({
   // localStorage after mount, then persist on change once loaded — same shape
   // as the trend-chart prefs, to avoid an SSR/client hydration mismatch.
   const [facetSelection, setFacetSelection] = React.useState<FacetSelection>({});
+  const [customFacetSelection, setCustomFacetSelection] =
+    React.useState<CustomFacetSelection>({});
   const [filtersLoaded, setFiltersLoaded] = React.useState(false);
   React.useEffect(() => {
     setFacetSelection(loadFacetSelection(dashboardId));
+    setCustomFacetSelection(loadCustomFacetSelection(dashboardId));
     setFiltersLoaded(true);
   }, [dashboardId]);
   React.useEffect(() => {
@@ -147,6 +173,43 @@ export function IssuesTable({
       );
     } catch {}
   }, [dashboardId, filtersLoaded, facetSelection]);
+  React.useEffect(() => {
+    if (!filtersLoaded) return;
+    try {
+      window.localStorage.setItem(
+        CUSTOM_FILTERS_STORAGE_KEY(dashboardId),
+        JSON.stringify(customFacetSelection),
+      );
+    } catch {}
+  }, [dashboardId, filtersLoaded, customFacetSelection]);
+
+  // Compile each custom facet value's JQL once per definition change. Invalid
+  // stored expressions resolve to null and are skipped at filter time — same
+  // treatment as the resolution dashboard.
+  const compiledCustomFacets = React.useMemo<CustomFacetForFilter[]>(
+    () =>
+      customFacets.map((f) => ({
+        id: f.id,
+        name: f.name,
+        values: f.values.map((v) => ({
+          id: v.id,
+          name: v.name,
+          compiled: tryCompileJql(v.jql),
+        })),
+      })),
+    [customFacets],
+  );
+
+  // Custom fields the facet JQLs reference — part of the issue query key so
+  // adding a field in smart-filter settings refetches with it included (the
+  // cached issue set was fetched without it and would match nothing).
+  const referencedFieldsKey = React.useMemo(
+    () =>
+      customFieldFingerprint(
+        customFacets.flatMap((f) => f.values.map((v) => v.jql)),
+      ),
+    [customFacets],
+  );
 
   const [pagination, setPagination] = React.useState<PaginationState>(() => {
     if (typeof window === "undefined") return { pageIndex: 0, pageSize: 30 };
@@ -217,7 +280,7 @@ export function IssuesTable({
   const bypassNextFetchRef = React.useRef(false);
 
   const query = useQuery<DashboardIssuesResult>({
-    queryKey: ["issues", dashboardId],
+    queryKey: ["issues", dashboardId, referencedFieldsKey],
     queryFn: async () => {
       // `lite=1` strips the heavy `comment` field from the upstream Jira
       // search. Comments are fetched lazily for the visible page below.
@@ -494,8 +557,13 @@ export function IssuesTable({
   const facets = React.useMemo(() => buildFacets(data), [data]);
 
   const facetFiltered = React.useMemo(
-    () => applyFacets(data, facetSelection),
-    [data, facetSelection],
+    () =>
+      applyCustomFacets(
+        applyFacets(data, facetSelection),
+        compiledCustomFacets,
+        customFacetSelection,
+      ),
+    [data, facetSelection, compiledCustomFacets, customFacetSelection],
   );
 
   const afterStatusFilter = React.useMemo(() => {
@@ -547,7 +615,7 @@ export function IssuesTable({
   // stranded on a no-longer-existent page.
   React.useEffect(() => {
     setPagination((p) => (p.pageIndex === 0 ? p : { ...p, pageIndex: 0 }));
-  }, [search, statusFilter, facetSelection, filtered.length]);
+  }, [search, statusFilter, facetSelection, customFacetSelection, filtered.length]);
 
   // Compute the (serverId, key) pairs for the currently-rendered page. Used
   // to drive the lazy comment batch loader below.
@@ -692,6 +760,9 @@ export function IssuesTable({
             facets={facets}
             value={facetSelection}
             onChange={setFacetSelection}
+            customFacets={compiledCustomFacets}
+            customValue={customFacetSelection}
+            onCustomChange={setCustomFacetSelection}
           />
         </div>
       )}

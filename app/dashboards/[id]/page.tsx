@@ -7,6 +7,7 @@ import {
   dashboards as dashboardsTable,
   dashboardSources,
 } from "@/lib/db/schema";
+import { listCustomFacetsWithValues } from "@/lib/db/queries";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { IssuesTable } from "@/components/issues-table/IssuesTable";
@@ -36,6 +37,7 @@ export default async function DashboardViewPage({
 
   const visibleColumns = JSON.parse(dash.visibleColumns) as ColumnKey[];
   const columnOrder = JSON.parse(dash.columnOrder) as ColumnKey[];
+  const customFacets = listCustomFacetsWithValues();
 
   return (
     <>
@@ -77,6 +79,7 @@ export default async function DashboardViewPage({
             refreshIntervalSec={dash.refreshIntervalSec}
             initialVisibleColumns={visibleColumns}
             initialColumnOrder={columnOrder}
+            customFacets={customFacets}
           />
         </div>
       )}

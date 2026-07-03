@@ -16,6 +16,7 @@ import {
   resolutionDashboardRatios,
 } from "./schema";
 import { decrypt } from "@/lib/crypto";
+import { extractCustomFieldIds } from "@/lib/jql-eval";
 import type { JiraServerConfig } from "@/lib/jira/types";
 
 export async function listServers() {
@@ -151,6 +152,21 @@ export function listCustomFacetsWithValues(): CustomFacetWithValues[] {
       displayOrder: v.displayOrder,
     })),
   }));
+}
+
+/**
+ * Custom field ids (`customfield_NNNNN`) referenced by custom smart-filter
+ * facet values. Every dashboard fetcher appends these to its Jira field list
+ * so the client-side facet JQL has the values it needs to match against.
+ */
+export function listCustomFacetFieldIds(): string[] {
+  const ids = new Set<string>();
+  for (const facet of listCustomFacetsWithValues()) {
+    for (const v of facet.values) {
+      for (const id of extractCustomFieldIds(v.jql)) ids.add(id);
+    }
+  }
+  return [...ids];
 }
 
 /* -------------------------------------------------------------------------- */

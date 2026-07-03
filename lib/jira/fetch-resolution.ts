@@ -14,7 +14,7 @@ import {
 import {
   getServerConfig,
   getStatusContext,
-  listCustomFacetsWithValues,
+  listCustomFacetFieldIds,
   listRatioConfigs,
 } from "@/lib/db/queries";
 import { extractCustomFieldIds } from "@/lib/jql-eval";
@@ -58,15 +58,10 @@ export type ResolutionSourceResult = {
  * exactly them instead of `*all` to keep the search payload small.
  */
 function referencedCustomFields(): string[] {
-  const ids = new Set<string>();
+  const ids = new Set<string>(listCustomFacetFieldIds());
   for (const rc of listRatioConfigs()) {
     for (const id of extractCustomFieldIds(rc.numeratorJql)) ids.add(id);
     for (const id of extractCustomFieldIds(rc.denominatorJql)) ids.add(id);
-  }
-  for (const facet of listCustomFacetsWithValues()) {
-    for (const v of facet.values) {
-      for (const id of extractCustomFieldIds(v.jql)) ids.add(id);
-    }
   }
   return [...ids];
 }
