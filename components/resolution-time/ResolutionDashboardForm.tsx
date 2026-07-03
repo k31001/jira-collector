@@ -244,6 +244,10 @@ export function ResolutionDashboardForm({ mode, servers, initial }: Props) {
               patch({ histogramBucketHours: Number(e.target.value) })
             }
           />
+          <p className="text-xs text-muted-foreground">
+            1주까지만 이 단위로 나뉘고, 그 이후는 1주–2주 → 2주–1달 → 1달–3달 →
+            3달+ 구간으로 자동 확장됩니다.
+          </p>
         </div>
       </div>
 

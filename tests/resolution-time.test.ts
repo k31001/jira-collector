@@ -259,11 +259,11 @@ test("buildRatioSeries honors numerator/denominator predicates and basis", () =>
 
 test("buildHistogram puts each issue in correct bin", () => {
   const issues = [
-    { hours: 5 }, // bin 0
+    { hours: 5 }, // bin 0 (0–24h)
     { hours: 23 }, // bin 0
-    { hours: 25 }, // bin 1
-    { hours: 100 }, // bin 4
-    { hours: 1000 }, // overflow
+    { hours: 25 }, // bin 1 (24–48h)
+    { hours: 100 }, // bin 4 (96–120h)
+    { hours: 1000 }, // bin 9 (1달–3달)
   ].map((x, i) =>
     Object.assign(
       makeIssue({
@@ -277,13 +277,78 @@ test("buildHistogram puts each issue in correct bin", () => {
     ),
   );
   const hist = buildHistogram(issues, 24, 12);
-  assert.equal(hist.length, 13); // 12 + overflow
+  // 7 linear 24h bins up to 1 week, then 2주 / 1달 / 3달 edges + open 3달+ bin
+  assert.equal(hist.length, 11);
   assert.equal(hist[0].count, 2);
   assert.equal(hist[1].count, 1);
   assert.equal(hist[4].count, 1);
-  assert.equal(hist[12].count, 1);
-  assert.equal(hist[12].toHours, null);
+  assert.equal(hist[9].count, 1);
+  assert.equal(hist[10].toHours, null);
   assert.equal(hist[0].issues.length, 2);
+});
+
+test("buildHistogram widens tail bins to 1주/2주/1달/3달", () => {
+  const hours = [
+    100, // linear region (96–120h)
+    200, // 1주–2주
+    400, // 2주–1달
+    1000, // 1달–3달
+    3000, // 3달+
+  ];
+  const issues = hours.map((h, i) =>
+    Object.assign(
+      makeIssue({
+        key: `T${i}`,
+        created: "2026-05-01T00:00:00Z",
+        resolved: new Date(
+          Date.parse("2026-05-01T00:00:00Z") + h * 3_600_000,
+        ).toISOString(),
+      }),
+      { resolutionHours: h },
+    ),
+  );
+  const hist = buildHistogram(issues, 24, 12);
+  const labels = hist.filter((b) => b.count > 0).map((b) => b.label);
+  assert.deepEqual(labels, ["4.0d–5.0d", "1주–2주", "2주–1달", "1달–3달", "3달+"]);
+  // Tail edges sit exactly at 1주(168h), 2주(336h), 1달(720h), 3달(2160h).
+  assert.deepEqual(
+    hist.slice(6).map((b) => [b.fromHours, b.toHours]),
+    [
+      [144, 168],
+      [168, 336],
+      [336, 720],
+      [720, 2160],
+      [2160, null],
+    ],
+  );
+});
+
+test("buildHistogram keeps a sane layout for very small and very large buckets", () => {
+  // Tiny bucket: linear region is capped by maxLinearBins, then jumps to the
+  // graduated tail without gaps.
+  const tiny = buildHistogram([], 1, 12);
+  assert.equal(tiny[11].toHours, 12); // 12 linear 1h bins
+  assert.deepEqual(
+    tiny.slice(12).map((b) => [b.fromHours, b.toHours]),
+    [
+      [12, 168],
+      [168, 336],
+      [336, 720],
+      [720, 2160],
+      [2160, null],
+    ],
+  );
+  // Huge bucket (≥ 1 week): a single linear bin, then whatever graduated
+  // edges remain above it.
+  const huge = buildHistogram([], 720, 12);
+  assert.deepEqual(
+    huge.map((b) => [b.fromHours, b.toHours]),
+    [
+      [0, 720],
+      [720, 2160],
+      [2160, null],
+    ],
+  );
 });
 
 test("buildHistogram count and issues stay in sync", () => {

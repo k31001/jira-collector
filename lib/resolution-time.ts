@@ -80,30 +80,60 @@ export type HistogramBin = {
   issues: ResolvedIssue[];
 };
 
+export const HOURS_PER_WEEK = 7 * 24;
+
+/**
+ * Graduated tail boundaries: past the fixed-width (linear) region the bins
+ * widen to calendar-ish steps — 1주 / 2주 / 1달(30d) / 3달(90d) — so a long
+ * tail doesn't get squashed into a single overflow bin.
+ */
+const GRADUATED_BOUNDARIES: ReadonlyArray<{ hours: number; label: string }> = [
+  { hours: HOURS_PER_WEEK, label: "1주" },
+  { hours: 2 * HOURS_PER_WEEK, label: "2주" },
+  { hours: 30 * 24, label: "1달" },
+  { hours: 90 * 24, label: "3달" },
+];
+
+function formatBoundary(h: number): string {
+  const named = GRADUATED_BOUNDARIES.find((g) => g.hours === h);
+  if (named) return named.label;
+  if (h < 24) return `${Math.round(h)}h`;
+  const d = h / 24;
+  return d < 10 ? `${d.toFixed(1)}d` : `${Math.round(d)}d`;
+}
+
 function formatBinLabel(fromHours: number, toHours: number | null): string {
-  const fmt = (h: number) => {
-    if (h < 24) return `${Math.round(h)}h`;
-    const d = h / 24;
-    return d < 10 ? `${d.toFixed(1)}d` : `${Math.round(d)}d`;
-  };
-  if (toHours === null) return `${fmt(fromHours)}+`;
-  return `${fmt(fromHours)}–${fmt(toHours)}`;
+  if (toHours === null) return `${formatBoundary(fromHours)}+`;
+  return `${formatBoundary(fromHours)}–${formatBoundary(toHours)}`;
 }
 
 /**
- * Bucket resolved issues into bins of `bucketHours` width. We use a fixed
- * number of bins (default 12) so the histogram stays readable; everything past
- * the last bin lands in an open-ended overflow bin.
+ * Bucket resolved issues into duration bins. The first region uses fixed
+ * `bucketHours`-wide bins (capped at `maxLinearBins`, and never past 1 week);
+ * beyond that the bins widen to graduated steps — 1주, 2주, 1달, 3달 — with an
+ * open-ended `3달+` bin at the end. This keeps short-lived issues readable at
+ * the chosen granularity while still spreading out the long tail instead of
+ * dumping everything into one overflow bin.
  */
 export function buildHistogram(
   issues: ResolvedIssue[],
   bucketHours: number,
-  bins: number = 12,
+  maxLinearBins: number = 12,
 ): HistogramBin[] {
+  // Upper edges of every bin; the final bin past the last edge is open-ended.
+  const edges: number[] = [];
+  const linearBins = Math.min(
+    maxLinearBins,
+    Math.max(1, Math.floor(HOURS_PER_WEEK / bucketHours)),
+  );
+  for (let i = 1; i <= linearBins; i++) edges.push(i * bucketHours);
+  for (const g of GRADUATED_BOUNDARIES) {
+    if (g.hours > edges[edges.length - 1]) edges.push(g.hours);
+  }
+
   const out: HistogramBin[] = [];
-  for (let i = 0; i < bins; i++) {
-    const from = i * bucketHours;
-    const to = (i + 1) * bucketHours;
+  let from = 0;
+  for (const to of edges) {
     out.push({
       fromHours: from,
       toHours: to,
@@ -111,21 +141,20 @@ export function buildHistogram(
       count: 0,
       issues: [],
     });
+    from = to;
   }
-  const overflowFrom = bins * bucketHours;
   out.push({
-    fromHours: overflowFrom,
+    fromHours: from,
     toHours: null,
-    label: formatBinLabel(overflowFrom, null),
+    label: formatBinLabel(from, null),
     count: 0,
     issues: [],
   });
 
   for (const issue of issues) {
     const h = issue.resolutionHours;
-    let idx = Math.floor(h / bucketHours);
-    if (idx >= bins) idx = bins; // overflow
-    if (idx < 0) idx = 0;
+    let idx = edges.findIndex((to) => h < to);
+    if (idx === -1) idx = out.length - 1; // past the last edge → open-ended bin
     out[idx].issues.push(issue);
     out[idx].count += 1;
   }
