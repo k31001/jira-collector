@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   compileJql,
+  customFieldFingerprint,
   extractCustomFieldIds,
   parseJql,
   tryCompileJql,
@@ -286,4 +287,22 @@ test("extractCustomFieldIds collects multiple ids and dedupes", () => {
 test("extractCustomFieldIds returns [] when no custom field is referenced", () => {
   assert.deepEqual(extractCustomFieldIds("priority = High AND created > -4w"), []);
   assert.deepEqual(extractCustomFieldIds(""), []);
+});
+
+test("customFieldFingerprint is stable across order and duplicates", () => {
+  assert.equal(
+    customFieldFingerprint(["cf[10050] = X", "cf[10016] >= 5"]),
+    customFieldFingerprint(["customfield_10016 >= 1", "cf[10050] = Y"]),
+  );
+  assert.equal(
+    customFieldFingerprint(["cf[10016] > 1 AND cf[10050] = A"]),
+    "customfield_10016,customfield_10050",
+  );
+  assert.equal(customFieldFingerprint([]), "");
+  assert.equal(customFieldFingerprint(["priority = High"]), "");
+  // A newly referenced field changes the fingerprint (what busts the cache).
+  assert.notEqual(
+    customFieldFingerprint(["cf[10016] = A"]),
+    customFieldFingerprint(["cf[10016] = A", "cf[99999] = B"]),
+  );
 });

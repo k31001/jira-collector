@@ -40,7 +40,9 @@
  *   - numeric: > >= < <= against a number literal (e.g. cf[10016] > 5)
  *   - date custom fields: > >= < <= against a relative/absolute date
  * Custom-field values are only available when the search fetched them
- * (the resolution dashboard requests all fields).
+ * (the resolution dashboard collects every field referenced by smart-filter
+ * facets / ratio configs and requests exactly those — see
+ * `referencedCustomFields` in lib/jira/fetch-resolution.ts).
  *
  * Errors throw a JqlParseError with the cursor position so the settings UI
  * can highlight where parsing broke.
@@ -440,6 +442,23 @@ export function extractCustomFieldIds(input: string): string[] {
     if (num) ids.add(`customfield_${num}`);
   }
   return [...ids];
+}
+
+/**
+ * Stable fingerprint of every custom field referenced across a set of
+ * restricted-JQL strings (sorted, comma-joined; "" when none). The dashboard
+ * puts this in its issue query key so that adding/removing a custom field in
+ * smart-filter or ratio settings invalidates the cached issue set and the
+ * next load refetches with the new field included — otherwise the cache
+ * (fetched without the field) would make the new filter silently match
+ * nothing until the scheduled refetch.
+ */
+export function customFieldFingerprint(jqls: Iterable<string>): string {
+  const ids = new Set<string>();
+  for (const jql of jqls) {
+    for (const id of extractCustomFieldIds(jql)) ids.add(id);
+  }
+  return [...ids].sort().join(",");
 }
 
 /* -------------------------------------------------------------------------- */

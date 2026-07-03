@@ -41,7 +41,7 @@ import {
   type ResolvedIssue,
   type TimeBucket,
 } from "@/lib/resolution-time";
-import { tryCompileJql } from "@/lib/jql-eval";
+import { customFieldFingerprint, tryCompileJql } from "@/lib/jql-eval";
 import type { CustomFacetWithValues, RatioConfigDef } from "@/lib/db/queries";
 import type {
   ResolutionDashboardIssuesResult,
@@ -307,8 +307,28 @@ export function ResolutionDashboardView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [windowDays, timeBucket, histogramBucketHours, dashboardId]);
 
+  // Custom fields referenced by this dashboard's client-side JQL (smart-filter
+  // facets + ratio configs). The server fetch requests exactly these fields,
+  // so they belong in the query key: adding a new custom field in settings
+  // must invalidate the cached issue set — otherwise issues fetched without
+  // the field are reused (until staleTime lapses) and the new filter silently
+  // matches nothing.
+  const referencedFieldsKey = React.useMemo(
+    () =>
+      customFieldFingerprint(
+        (function* () {
+          for (const f of rawCustomFacets) for (const v of f.values) yield v.jql;
+          for (const rc of ratioConfigs) {
+            yield rc.numeratorJql;
+            yield rc.denominatorJql;
+          }
+        })(),
+      ),
+    [rawCustomFacets, ratioConfigs],
+  );
+
   const query = useQuery<ResolutionDashboardIssuesResult>({
-    queryKey: ["resolution-issues", dashboardId],
+    queryKey: ["resolution-issues", dashboardId, referencedFieldsKey],
     queryFn: async () => {
       setLoadProgress({ fetched: 0, planned: null, startedAt: Date.now() });
       setStreamingSources([]);
