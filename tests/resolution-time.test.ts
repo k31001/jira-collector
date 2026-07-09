@@ -21,9 +21,12 @@ import {
   partitionResolvedByPeriod,
   buildBugRateSeries,
   buildRatioSeries,
+  countCustomFacetValues,
+  CUSTOM_FACET_UNMATCHED,
   isBugType,
   shiftDateOnly,
   shiftIssuesTime,
+  type CustomFacetForFilter,
   type ResolvedIssue,
 } from "@/lib/resolution-time";
 import type { NormalizedIssue } from "@/lib/jira/types";
@@ -370,6 +373,45 @@ test("buildHistogram count and issues stay in sync", () => {
   for (const b of hist) {
     assert.equal(b.count, b.issues.length);
   }
+});
+
+/* ------------------------- custom facet counting -------------------------- */
+
+test("countCustomFacetValues counts matches, multi-matches, and the unmatched bucket", () => {
+  const issues = [
+    makeIssue({ key: "A-1", labels: ["win"] }),
+    makeIssue({ key: "A-2", labels: ["win", "mac"] }),
+    makeIssue({ key: "A-3", labels: [] }),
+  ];
+  const facet: CustomFacetForFilter = {
+    id: "f1",
+    name: "운영체제",
+    values: [
+      { id: "v1", name: "Windows", compiled: (i) => i.labels.includes("win") },
+      { id: "v2", name: "macOS", compiled: (i) => i.labels.includes("mac") },
+      { id: "v3", name: "깨진 값", compiled: null }, // invalid JQL → skipped
+    ],
+  };
+  const counts = countCustomFacetValues(issues, facet);
+  assert.deepEqual(counts, [
+    { value: "Windows", count: 2 },
+    { value: "macOS", count: 1 },
+    { value: CUSTOM_FACET_UNMATCHED, count: 1 },
+  ]);
+});
+
+test("countCustomFacetValues omits the unmatched bucket when everything matches", () => {
+  const issues = [makeIssue({ key: "B-1", labels: ["win"] })];
+  const facet: CustomFacetForFilter = {
+    id: "f1",
+    name: "OS",
+    values: [
+      { id: "v1", name: "Windows", compiled: (i) => i.labels.includes("win") },
+    ],
+  };
+  assert.deepEqual(countCustomFacetValues(issues, facet), [
+    { value: "Windows", count: 1 },
+  ]);
 });
 
 /* --------------------------- time-axis offset ---------------------------- */

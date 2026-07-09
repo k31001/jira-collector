@@ -687,6 +687,41 @@ export function applyFacets(
   return issues.filter((i) => checks.every((fn) => fn(i)));
 }
 
+/** Bucket name for issues that match none of a custom facet's values. */
+export const CUSTOM_FACET_UNMATCHED = "(해당 없음)";
+
+/**
+ * Count how many issues match each value of a custom facet, for distribution
+ * charts. Like labels, one issue can match several values (each match
+ * counts); issues matching no value are folded into a trailing
+ * `CUSTOM_FACET_UNMATCHED` bucket so the chart still accounts for them.
+ * Values whose JQL didn't compile are skipped.
+ */
+export function countCustomFacetValues(
+  issues: ReadonlyArray<NormalizedIssue>,
+  facet: CustomFacetForFilter,
+): { value: string; count: number }[] {
+  const counts = new Map<string, number>();
+  const compiled = facet.values.filter(
+    (v): v is typeof v & { compiled: (i: NormalizedIssue) => boolean } =>
+      v.compiled !== null,
+  );
+  let unmatched = 0;
+  for (const issue of issues) {
+    let any = false;
+    for (const v of compiled) {
+      if (v.compiled(issue)) {
+        bump(counts, v.name);
+        any = true;
+      }
+    }
+    if (!any) unmatched += 1;
+  }
+  const out = toEntries(counts);
+  if (unmatched > 0) out.push({ value: CUSTOM_FACET_UNMATCHED, count: unmatched });
+  return out;
+}
+
 /**
  * Apply custom (user-defined, JQL-backed) facets. Like `applyFacets`, values
  * within a single facet are OR'd and distinct facets are AND'd. Selected

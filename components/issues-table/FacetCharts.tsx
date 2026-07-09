@@ -26,7 +26,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { buildFacets, type FacetField } from "@/lib/resolution-time";
+import {
+  buildFacets,
+  countCustomFacetValues,
+  type CustomFacetForFilter,
+  type FacetField,
+} from "@/lib/resolution-time";
 import type { NormalizedIssue } from "@/lib/jira/types";
 
 const DIMENSION_OPTIONS: { value: FacetField; label: string }[] = [
@@ -37,6 +42,11 @@ const DIMENSION_OPTIONS: { value: FacetField; label: string }[] = [
   { value: "labels", label: "라벨" },
   { value: "reporter", label: "보고자" },
 ];
+
+// Custom smart-filter facets join the dimension picker under a namespaced
+// key so a facet id can never collide with a built-in field name.
+const CUSTOM_DIM_PREFIX = "custom:";
+const customDimKey = (facetId: string) => `${CUSTOM_DIM_PREFIX}${facetId}`;
 
 // A fixed, color-blind-friendly-ish palette reused for both charts so a given
 // category keeps the same hue whether shown as a pie slice or a bar.
@@ -60,7 +70,10 @@ const PALETTE = [
 const MAX_SLICES = 11;
 
 type ChartKind = "pie" | "bar";
-type Persisted = { open: boolean; dimension: FacetField; kind: ChartKind };
+// `dimension` is a built-in FacetField or a `custom:<facetId>` key. Whether a
+// stored custom key still exists is only known at render time (the facet may
+// have been deleted since), so validation of custom keys happens there.
+type Persisted = { open: boolean; dimension: string; kind: ChartKind };
 
 const DEFAULT_PREFS: Persisted = {
   open: false,
@@ -70,7 +83,7 @@ const DEFAULT_PREFS: Persisted = {
 
 const STORAGE_KEY = (dashboardId: string) => `facet-charts:${dashboardId}`;
 
-const VALID_DIMENSIONS = new Set(DIMENSION_OPTIONS.map((d) => d.value));
+const VALID_DIMENSIONS = new Set<string>(DIMENSION_OPTIONS.map((d) => d.value));
 
 function loadPrefs(dashboardId: string): Persisted {
   if (typeof window === "undefined") return DEFAULT_PREFS;
@@ -82,8 +95,9 @@ function loadPrefs(dashboardId: string): Persisted {
       open: typeof parsed.open === "boolean" ? parsed.open : false,
       dimension:
         typeof parsed.dimension === "string" &&
-        VALID_DIMENSIONS.has(parsed.dimension as FacetField)
-          ? (parsed.dimension as FacetField)
+        (VALID_DIMENSIONS.has(parsed.dimension) ||
+          parsed.dimension.startsWith(CUSTOM_DIM_PREFIX))
+          ? parsed.dimension
           : "status",
       kind: parsed.kind === "bar" ? "bar" : "pie",
     };
@@ -102,9 +116,12 @@ type Slice = { name: string; count: number; fill: string };
 export function FacetCharts({
   dashboardId,
   issues,
+  customFacets = [],
 }: {
   dashboardId: string;
   issues: NormalizedIssue[];
+  /** Compiled custom smart-filter facets, offered as extra dimensions. */
+  customFacets?: CustomFacetForFilter[];
 }) {
   // SSR-safe default first; hydrate persisted prefs after mount (see TrendChart
   // for why reading localStorage during render is avoided).
@@ -128,8 +145,23 @@ export function FacetCharts({
     } catch {}
   }, [dashboardId, loaded, open, dimension, kind]);
 
+  const customById = React.useMemo(
+    () => new Map(customFacets.map((f) => [customDimKey(f.id), f])),
+    [customFacets],
+  );
+
+  // A stored `custom:<id>` dimension whose facet was deleted since falls back
+  // to "status". Computed during render to avoid setState-in-effect.
+  const effectiveDimension =
+    VALID_DIMENSIONS.has(dimension) || customById.has(dimension)
+      ? dimension
+      : "status";
+
   const slices = React.useMemo<Slice[]>(() => {
-    const entries = buildFacets(issues)[dimension];
+    const customFacet = customById.get(effectiveDimension);
+    const entries = customFacet
+      ? countCustomFacetValues(issues, customFacet)
+      : buildFacets(issues)[effectiveDimension as FacetField];
     if (entries.length <= MAX_SLICES) {
       return entries.map((e, i) => ({
         name: e.value,
@@ -147,7 +179,7 @@ export function FacetCharts({
       .reduce((acc, e) => acc + e.count, 0);
     head.push({ name: "기타", count: restCount, fill: "#9CA3AF" });
     return head;
-  }, [issues, dimension]);
+  }, [issues, effectiveDimension, customById]);
 
   const total = React.useMemo(
     () => slices.reduce((acc, s) => acc + s.count, 0),
@@ -155,7 +187,9 @@ export function FacetCharts({
   );
 
   const dimensionLabel =
-    DIMENSION_OPTIONS.find((d) => d.value === dimension)?.label ?? "";
+    customById.get(effectiveDimension)?.name ??
+    DIMENSION_OPTIONS.find((d) => d.value === effectiveDimension)?.label ??
+    "";
 
   return (
     <section className="border-b bg-card/30">
@@ -204,12 +238,10 @@ export function FacetCharts({
                 막대
               </Button>
             </div>
-            <div className="w-[120px]">
+            <div className="w-[140px]">
               <Select
-                value={dimension}
-                onValueChange={(v) =>
-                  setPrefs((p) => ({ ...p, dimension: v as FacetField }))
-                }
+                value={effectiveDimension}
+                onValueChange={(v) => setPrefs((p) => ({ ...p, dimension: v }))}
               >
                 <SelectTrigger className="h-7 text-xs" aria-label="분류 기준">
                   <SelectValue />
@@ -220,6 +252,13 @@ export function FacetCharts({
                       {o.label}별
                     </SelectItem>
                   ))}
+                  {customFacets
+                    .filter((f) => f.values.length > 0)
+                    .map((f) => (
+                      <SelectItem key={f.id} value={customDimKey(f.id)}>
+                        {f.name}별
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>

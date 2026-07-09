@@ -768,7 +768,11 @@ export function IssuesTable({
       )}
 
       {data.length > 0 && (
-        <FacetCharts dashboardId={dashboardId} issues={facetFiltered} />
+        <FacetCharts
+          dashboardId={dashboardId}
+          issues={facetFiltered}
+          customFacets={compiledCustomFacets}
+        />
       )}
 
       <div className="flex flex-wrap items-center gap-2 px-6 py-2 border-t">
