@@ -18,6 +18,8 @@ import {
   listRatioConfigs,
 } from "@/lib/db/queries";
 import { extractCustomFieldIds } from "@/lib/jql-eval";
+import { RESOLUTION_ISSUE_LIMIT } from "@/lib/resolution-time";
+import { fingerprint } from "@/lib/server-cache";
 import { JiraError, type NormalizedIssue } from "./types";
 import {
   DEFAULT_FIELDS_NO_COMMENT,
@@ -26,11 +28,7 @@ import {
 } from "./client";
 import { normalizeIssue } from "./normalize";
 
-/**
- * Max issues analyzed per JQL source. A source that reaches this cap is
- * flagged `capped` so the UI can advise narrowing the window / JQL.
- */
-export const RESOLUTION_ISSUE_LIMIT = 2000;
+export { RESOLUTION_ISSUE_LIMIT };
 
 export type Milestone = { name: string; date: string };
 
@@ -64,6 +62,19 @@ function referencedCustomFields(): string[] {
     for (const id of extractCustomFieldIds(rc.denominatorJql)) ids.add(id);
   }
   return [...ids];
+}
+
+/**
+ * Fingerprint of the settings that shape the fetched payload independently
+ * of the dashboard's JQLs: the custom fields requested from Jira and the
+ * custom-status context baked into each normalized issue. The issues route
+ * folds this into its cache key so a settings change misses the cache
+ * instead of serving issues normalized under the old configuration.
+ */
+export async function resolutionFetchFingerprint(): Promise<string> {
+  const fields = referencedCustomFields().sort().join(",");
+  const ctx = await getStatusContext();
+  return fingerprint(`${fields}|${JSON.stringify(ctx)}`);
 }
 
 export type ResolutionDashboardIssuesResult = {
@@ -205,9 +216,13 @@ export async function fetchResolutionDashboardIssues(
         result = { ...base, error: "Jira 서버 설정을 찾을 수 없습니다" };
       } else {
         try {
+          // No `renderedFields`: nothing here renders HTML, and skipping the
+          // expand spares Jira a rendering pass per issue and trims the
+          // payload.
           const raws = await searchIssues(serverConfig, s.jql, {
             fields,
             limit: RESOLUTION_ISSUE_LIMIT,
+            renderedFields: false,
             onPage: bumpFetched,
           });
           const issues = raws.map((r) =>

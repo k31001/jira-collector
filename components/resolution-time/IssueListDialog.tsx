@@ -9,13 +9,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { formatHours, type ResolvedIssue } from "@/lib/resolution-time";
+import { formatHours } from "@/lib/resolution-time";
+import type { NormalizedIssue } from "@/lib/jira/types";
 import { formatDate } from "@/lib/utils";
+
+/**
+ * An issue row for the dialog. `resolutionHours` is present for resolved
+ * issues (histogram bins, time-metric comparison cells) and absent for
+ * unresolved ones (count-metric comparison cells include open issues too).
+ */
+export type IssueListItem = NormalizedIssue & { resolutionHours?: number };
 
 export type IssueListSelection = {
   sourceLabel: string;
   binLabel: string;
-  issues: ResolvedIssue[];
+  issues: IssueListItem[];
 };
 
 export function IssueListDialog({
@@ -27,12 +35,18 @@ export function IssueListDialog({
   onOpenChange: (open: boolean) => void;
   selection: IssueListSelection | null;
 }) {
+  // Slowest first; unresolved issues (no resolution time) sink to the bottom.
   const sorted = React.useMemo(() => {
     if (!selection) return [];
     return [...selection.issues].sort(
-      (a, b) => b.resolutionHours - a.resolutionHours,
+      (a, b) =>
+        (b.resolutionHours ?? Number.NEGATIVE_INFINITY) -
+        (a.resolutionHours ?? Number.NEGATIVE_INFINITY),
     );
   }, [selection]);
+  const unresolvedCount = sorted.filter(
+    (i) => i.resolutionHours === undefined,
+  ).length;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -42,7 +56,9 @@ export function IssueListDialog({
             {selection?.sourceLabel ?? ""} · {selection?.binLabel ?? ""}
           </DialogTitle>
           <DialogDescription>
-            해당 구간({selection?.binLabel ?? ""})에 속한 이슈 {sorted.length}개. 해결 시간이 오래 걸린 순으로 정렬됩니다.
+            해당 항목({selection?.binLabel ?? ""})에 속한 이슈 {sorted.length}개.
+            해결 시간이 오래 걸린 순으로 정렬됩니다
+            {unresolvedCount > 0 ? ` (미해결 ${unresolvedCount}개는 뒤에)` : ""}.
           </DialogDescription>
         </DialogHeader>
 
@@ -97,7 +113,7 @@ export function IssueListDialog({
                       {formatHours(i.resolutionHours)}
                     </td>
                     <td className="py-1.5 pr-2 align-top text-[11px] text-muted-foreground">
-                      {formatDate(i.resolved)}
+                      {i.resolved ? formatDate(i.resolved) : "—"}
                     </td>
                   </tr>
                 ))}

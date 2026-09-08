@@ -18,7 +18,7 @@ import type {
   FacetSelection,
 } from "@/lib/resolution-time";
 
-const FACET_LABELS: Record<FacetField, string> = {
+export const FACET_LABELS: Record<FacetField, string> = {
   status: "상태",
   assignee: "담당자",
   issueType: "타입",
@@ -141,12 +141,13 @@ export function SmartFilters({
   );
 }
 
-function FacetPopover({
+export function FacetPopover({
   label,
   options,
   selected,
   onChange,
   hideCounts = false,
+  className,
 }: {
   label: string;
   options: { value: string; count: number; label?: string }[];
@@ -155,6 +156,8 @@ function FacetPopover({
   /** Suppress per-option counts (used by custom facets where the count is
    * not meaningful — values are user-defined, not aggregated from issues). */
   hideCounts?: boolean;
+  /** Extra classes for the trigger button. */
+  className?: string;
 }) {
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
@@ -187,7 +190,11 @@ function FacetPopover({
           type="button"
           variant={isActive ? "default" : "outline"}
           size="sm"
-          className={cn("h-7 gap-1 px-2 text-xs", isActive && "shadow-sm")}
+          className={cn(
+            "h-7 gap-1 px-2 text-xs",
+            isActive && "shadow-sm",
+            className,
+          )}
         >
           {label}
           {isActive ? (

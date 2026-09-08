@@ -9,6 +9,29 @@
 (다음 릴리스에 포함될 변경 사항)
 
 - 버그 재오픈(reopen) 횟수 추이 — Jira changelog의 status 역방향 전이를 세야 해서 상태별 체류 시간(v1.12.0)의 changelog 경로 위에 lazy로 얹는 게 자연스러움. 후속 작업으로 남김.
+- 해결 시간 대시보드 로딩 후속 후보 (1.31.0에서 보류) — Cloud 토큰 페이지네이션은 순차라 4,000개 기준 페이지 수만큼 왕복이 남음. JQL을 기간(`created`)으로 분할해 병렬로 받는 방식은 파티션 간 정합성 처리가 필요해 후속으로. 이슈 payload 슬림화(`url`/`serverName` 등 파생 필드 제거)와 `buildUnresolvedTimeSeries` O(버킷×이슈) → 정렬 기반 O(n log n) 전환도 효과 대비 변경 폭이 커서 보류.
+
+---
+
+## [1.31.0] — 2026-09-08
+
+### Added
+- **해결 시간 대시보드 · 스마트 필터 비교 차트** — 스마트 필터의 한 필드(상태·담당자·타입·우선순위·라벨·보고자 + 커스텀 facet)에서 값을 고르면 **모든 JQL에 대해** 그 값에 해당하는 이슈를 막대그래프로 비교합니다. 값을 하나 고르면 JQL마다 막대 하나(JQL 컬러), 둘 이상 고르면 값별 세그먼트가 쌓인 **누적 막대**. 지표는 **이슈 수**(해결/미해결 포함) 외에 **평균 / 중앙값 / P90 해결 시간**(해결된 이슈만, 시간은 누적할 수 없으므로 값별 막대를 나란히 표시)을 선택할 수 있습니다. 값을 고르지 않으면 많은 순으로 상위 8개 값을 자동 표시하고, 막대를 클릭하면 해당 JQL·값의 이슈 목록이 열립니다. 모집단은 각 JQL의 스마트 필터 적용 후 이슈이며, 필드·값·지표 선택은 대시보드별 localStorage(`resolution-time:facet-compare:{id}`)에 저장됩니다.
+  - 순수 헬퍼 `facetValuesOf` / `countFacetValues` / `customFacetValuesOf` / `buildFacetComparison` / `facetComparisonMetric` 추가(테스트 포함). `buildFacets`도 같은 `facetValuesOf`를 쓰도록 정리.
+  - 이슈 목록 다이얼로그가 미해결 이슈(해결 시간 없음)도 받을 수 있게 일반화 — 해결 시간 오래 걸린 순 정렬, 미해결은 뒤로.
+
+### Changed
+- **해결 시간 대시보드 분석 한도 2,000 → 4,000개** — `RESOLUTION_ISSUE_LIMIT`을 클라이언트에서도 참조할 수 있게 `lib/resolution-time.ts`로 옮기고 4,000으로 상향. 한도 도달 배너가 상수를 그대로 인용합니다.
+
+### Performance
+해결 시간 대시보드의 로딩·분석 경로를 점검해 효과가 큰 순으로 적용했습니다.
+- **이슈 스트림 gzip 압축** — `/api/resolution-time/[id]/issues` NDJSON 응답이 지금까지 비압축으로 나가고 있었습니다. Next 내장 압축(`compression` 미들웨어)은 Route Handler 응답의 Content-Type 을 배열로 받아 `compressible` 검사에서 항상 탈락하므로(페이지 응답만 압축됨), 라우트 안에서 직접 gzip 하고 **이벤트마다 `Z_SYNC_FLUSH`** 해 진행률 라인이 수 MB짜리 `source` 라인 뒤에 묶이지 않고 실시간으로 흐르게 했습니다(`lib/ndjson-stream.ts`, 테스트 포함). 목 Jira 512개 이슈 기준 전송량 265KB → 33KB (약 8배). `Accept-Encoding` 에 gzip 이 없으면 기존처럼 평문. nginx 뒤에서도 프록시 버퍼링 없이 흐르도록 `X-Accel-Buffering: no` 를 추가했습니다.
+- **서버 캐시 TTL을 대시보드 자동 새로고침 주기에 맞춤** — 기존 15초 고정 TTL은 페이지 리로드·새 탭·뒤로가기마다 사실상 매번 Jira를 다시 조회했습니다. 이제 각 대시보드의 `refreshIntervalSec`(15초~10분으로 클램프, 자동 새로고침 꺼짐이면 10분) 동안 결과를 보관해 재방문이 즉시 뜨고, 클라이언트의 주기적 refetch는 TTL 만료 후에 도착하므로 자동 새로고침은 항상 새로 받습니다. **새로고침** 버튼은 `?bypass=1` 로 캐시를 건너뜁니다. 캐시 키에 요청 커스텀 필드·커스텀 상태 컨텍스트 지문을 포함해 설정 변경 시 자동으로 miss 되고, JQL 편집·대시보드 삭제 시 prefix 로 무효화합니다(`lib/resolution-issues-cache.ts`).
+- **Jira 조회 `expand=renderedFields` 제거 (해결 시간 fetch)** — 집계만 하는 경로에서 HTML 렌더 필드는 쓰이지 않으므로 요청하지 않습니다. Jira 측 렌더링 비용과 응답 크기를 줄입니다. `searchIssues`에 `renderedFields` 옵션 추가(기본값은 기존 동작 유지).
+- **Cloud 페이지 크기 500 → 1,000** — Cloud `/search/jql` 은 토큰 페이지네이션이라 순차 왕복만 가능하므로 페이지 크기가 유일한 레버. 요청 한도(5,000) 내에서 1,000으로 올려 4,000개 기준 최대 왕복 8회 → 4회. Jira가 더 작은 페이지를 돌려줘도 `nextPageToken` 을 끝까지 따라가므로 결과는 동일합니다. Server/DC는 병렬 페이지라 500 유지.
+- **클라이언트 분석 재계산 축소** — 스마트 필터 패널이 매 렌더마다 소스별 `buildFacets` 를 다시 돌리던 것을 이슈 셋이 바뀔 때만 계산하도록 메모이즈. 기간 비교·비율 분석·에이징·슬로우 테이블에 넘기던 prop 배열도 메모이즈해, 필터 클릭이나 다이얼로그 열기 같은 무관한 렌더에서 하위 카드의 flatten/정렬 memo가 다시 돌지 않습니다. NDJSON 파서는 청크마다 버퍼 전체를 다시 스캔하지 않고 이전 위치부터 개행을 찾습니다(4,000개 소스 한 줄은 수 MB).
+
+[1.31.0]: https://github.com/k31001/jira-collector/releases/tag/v1.31.0
 
 ---
 

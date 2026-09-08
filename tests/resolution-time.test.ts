@@ -24,6 +24,11 @@ import {
   isBugType,
   shiftDateOnly,
   shiftIssuesTime,
+  facetValuesOf,
+  countFacetValues,
+  buildFacetComparison,
+  customFacetValuesOf,
+  facetComparisonMetric,
   type ResolvedIssue,
 } from "@/lib/resolution-time";
 import type { NormalizedIssue } from "@/lib/jira/types";
@@ -689,4 +694,146 @@ test("statsForSource computes avg/median/p90", () => {
   assert.equal(stats.avgHours, 55);
   assert.equal(stats.medianHours, 55);
   assert.equal(stats.p90Hours, 91);
+});
+
+/* ------------------------ facet comparison (cross-JQL) ------------------- */
+
+test("facetValuesOf uses the smart-filter placeholders and multi-valued labels", () => {
+  const bare = makeIssue({ labels: [] });
+  assert.deepEqual(facetValuesOf(bare, "assignee"), ["(미할당)"]);
+  assert.deepEqual(facetValuesOf(bare, "reporter"), ["(미상)"]);
+  assert.deepEqual(facetValuesOf(bare, "priority"), ["(미상)"]);
+  assert.deepEqual(facetValuesOf(bare, "issueType"), ["(미상)"]);
+  assert.deepEqual(facetValuesOf(bare, "status"), ["Done"]);
+  assert.deepEqual(facetValuesOf(bare, "labels"), []);
+  const tagged = makeIssue({ priority: "High", labels: ["a", "b"] });
+  assert.deepEqual(facetValuesOf(tagged, "priority"), ["High"]);
+  assert.deepEqual(facetValuesOf(tagged, "labels"), ["a", "b"]);
+});
+
+test("countFacetValues counts an issue once per distinct value, sorted desc", () => {
+  const issues = [
+    makeIssue({ key: "A", labels: ["x", "x", "y"] }),
+    makeIssue({ key: "B", labels: ["x"] }),
+    makeIssue({ key: "C", labels: [] }),
+  ];
+  const counts = countFacetValues(issues, (i) => facetValuesOf(i, "labels"));
+  assert.deepEqual(counts, [
+    { value: "x", count: 2 },
+    { value: "y", count: 1 },
+  ]);
+});
+
+test("buildFacetComparison splits each source by value with count + time stats", () => {
+  const src = (id: string, issues: NormalizedIssue[]) => ({
+    sourceId: id,
+    label: id.toUpperCase(),
+    color: "#000",
+    issues,
+  });
+  const a = src("a", [
+    makeIssue({
+      key: "A-1",
+      priority: "High",
+      created: "2026-05-01T00:00:00Z",
+      resolved: "2026-05-02T00:00:00Z", // 24h
+    }),
+    makeIssue({
+      key: "A-2",
+      priority: "High",
+      created: "2026-05-01T00:00:00Z",
+      resolved: "2026-05-04T00:00:00Z", // 72h
+    }),
+    makeIssue({ key: "A-3", priority: "High", statusCategoryKey: "new" }), // unresolved
+    makeIssue({
+      key: "A-4",
+      priority: "Low",
+      created: "2026-05-01T00:00:00Z",
+      resolved: "2026-05-01T12:00:00Z", // 12h
+    }),
+    makeIssue({ key: "A-5", priority: "Medium" }), // not a requested value
+  ]);
+  const b = src("b", [makeIssue({ key: "B-1", priority: "Low" })]);
+
+  const rows = buildFacetComparison(
+    [a, b],
+    (i) => facetValuesOf(i, "priority"),
+    ["High", "Low"],
+  );
+  assert.equal(rows.length, 2);
+
+  const [ra, rb] = rows;
+  assert.equal(ra.label, "A");
+  assert.equal(ra.total, 5);
+  assert.deepEqual(
+    ra.cells.map((c) => [c.value, c.count]),
+    [
+      ["High", 3],
+      ["Low", 1],
+    ],
+  );
+  // Count includes the unresolved A-3; time stats only use the 2 resolved.
+  const high = ra.cells[0];
+  assert.equal(high.resolved.length, 2);
+  assert.equal(high.avgHours, 48);
+  assert.equal(high.medianHours, 48);
+  assert.equal(high.p90Hours, 24 + (72 - 24) * 0.9);
+  assert.equal(ra.cells[1].avgHours, 12);
+  assert.deepEqual(
+    high.issues.map((i) => i.key),
+    ["A-1", "A-2", "A-3"],
+  );
+
+  // Source B has no High issues → zero cell, and Low has no resolution time.
+  assert.equal(rb.total, 1);
+  assert.deepEqual(
+    rb.cells.map((c) => [c.value, c.count]),
+    [
+      ["High", 0],
+      ["Low", 1],
+    ],
+  );
+  assert.equal(rb.cells[0].avgHours, null);
+  assert.equal(rb.cells[1].avgHours, null);
+
+  // Metric accessor mirrors the cell fields.
+  assert.equal(facetComparisonMetric(high, "count"), 3);
+  assert.equal(facetComparisonMetric(high, "avg"), 48);
+  assert.equal(facetComparisonMetric(high, "median"), 48);
+  assert.equal(facetComparisonMetric(rb.cells[0], "p90"), null);
+});
+
+test("customFacetValuesOf returns matching value ids and skips uncompiled values", () => {
+  const facet = {
+    id: "os",
+    name: "운영체제",
+    values: [
+      { id: "win", name: "Windows", compiled: (i: NormalizedIssue) => i.labels.includes("windows") },
+      { id: "mac", name: "macOS", compiled: (i: NormalizedIssue) => i.labels.includes("mac") },
+      { id: "broken", name: "Broken", compiled: null },
+    ],
+  };
+  const valuesOf = customFacetValuesOf(facet);
+  assert.deepEqual(valuesOf(makeIssue({ labels: ["windows", "mac"] })), ["win", "mac"]);
+  assert.deepEqual(valuesOf(makeIssue({ labels: ["linux"] })), []);
+
+  const rows = buildFacetComparison(
+    [
+      {
+        sourceId: "s",
+        label: "S",
+        color: "#000",
+        issues: [
+          makeIssue({ key: "1", labels: ["windows"] }),
+          makeIssue({ key: "2", labels: ["windows", "mac"] }),
+        ],
+      },
+    ],
+    valuesOf,
+    ["win", "mac", "broken"],
+  );
+  assert.deepEqual(
+    rows[0].cells.map((c) => c.count),
+    [2, 1, 0],
+  );
 });

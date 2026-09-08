@@ -15,6 +15,14 @@ import type { NormalizedIssue } from "@/lib/jira/types";
 export const MS_PER_HOUR = 3600 * 1000;
 export const MS_PER_DAY = 24 * MS_PER_HOUR;
 
+/**
+ * Max issues analyzed per JQL source. A source that reaches this cap is
+ * flagged `capped` by the server fetch so the UI can advise narrowing the
+ * window / JQL. Lives here (not in the server-only fetcher) so the client
+ * banner can quote the same number.
+ */
+export const RESOLUTION_ISSUE_LIMIT = 4000;
+
 export type ResolvedIssue = NormalizedIssue & {
   resolutionHours: number;
 };
@@ -612,6 +620,41 @@ export type CustomFacetForFilter = {
   }>;
 };
 
+export const FACET_FIELDS: readonly FacetField[] = [
+  "status",
+  "assignee",
+  "issueType",
+  "priority",
+  "labels",
+  "reporter",
+];
+
+/**
+ * The facet value(s) an issue carries for a built-in field, using the same
+ * placeholders the smart-filter dropdowns show ("(미할당)", "(미상)"). Labels
+ * are multi-valued (an issue with no labels contributes nothing); every other
+ * field yields exactly one value.
+ */
+export function facetValuesOf(
+  issue: NormalizedIssue,
+  field: FacetField,
+): string[] {
+  switch (field) {
+    case "status":
+      return [issue.effectiveStatus.label];
+    case "assignee":
+      return [issue.assignee?.name ?? "(미할당)"];
+    case "reporter":
+      return [issue.reporter?.name ?? "(미상)"];
+    case "issueType":
+      return [issue.issueType ?? "(미상)"];
+    case "priority":
+      return [issue.priority ?? "(미상)"];
+    case "labels":
+      return issue.labels;
+  }
+}
+
 /** Aggregate field-value counts. Useful to populate filter dropdowns. */
 export function buildFacets(issues: NormalizedIssue[]): Facets {
   const counts: Record<FacetField, Map<string, number>> = {
@@ -623,12 +666,9 @@ export function buildFacets(issues: NormalizedIssue[]): Facets {
     reporter: new Map(),
   };
   for (const i of issues) {
-    bump(counts.status, i.effectiveStatus.label);
-    bump(counts.assignee, i.assignee?.name ?? "(미할당)");
-    bump(counts.reporter, i.reporter?.name ?? "(미상)");
-    bump(counts.issueType, i.issueType ?? "(미상)");
-    bump(counts.priority, i.priority ?? "(미상)");
-    for (const l of i.labels) bump(counts.labels, l);
+    for (const field of FACET_FIELDS) {
+      for (const v of facetValuesOf(i, field)) bump(counts[field], v);
+    }
   }
   return {
     status: toEntries(counts.status),
@@ -709,6 +749,141 @@ export function applyCustomFacets(
   }
   if (checks.length === 0) return issues;
   return issues.filter((i) => checks.every((fn) => fn(i)));
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Facet comparison (smart-filter based cross-JQL bar chart)                 */
+/* -------------------------------------------------------------------------- */
+
+/** Maps an issue to the facet value(s) it belongs to (labels → many). */
+export type FacetValuesOf = (issue: NormalizedIssue) => string[];
+
+export type FacetValueCount = { value: string; count: number };
+
+/**
+ * Count how many issues carry each facet value across a population. One issue
+ * counts toward every value it carries (labels), but only once per value.
+ * Sorted by count desc so callers can pick the "top N" values.
+ */
+export function countFacetValues(
+  issues: ReadonlyArray<NormalizedIssue>,
+  valuesOf: FacetValuesOf,
+): FacetValueCount[] {
+  const m = new Map<string, number>();
+  for (const i of issues) {
+    for (const v of new Set(valuesOf(i))) bump(m, v);
+  }
+  return toEntries(m);
+}
+
+/**
+ * `valuesOf` for a custom (JQL-backed) facet: the ids of the values whose
+ * compiled JQL matches the issue. Values whose JQL failed to compile never
+ * match.
+ */
+export function customFacetValuesOf(facet: CustomFacetForFilter): FacetValuesOf {
+  const preds = facet.values
+    .filter((v) => v.compiled !== null)
+    .map((v) => ({ id: v.id, test: v.compiled as (i: NormalizedIssue) => boolean }));
+  return (issue) => {
+    const out: string[] = [];
+    for (const { id, test } of preds) if (test(issue)) out.push(id);
+    return out;
+  };
+}
+
+export type FacetCompareMetric = "count" | "avg" | "median" | "p90";
+
+export type FacetComparisonCell = {
+  value: string;
+  /** Issues in the source population carrying this value (resolved or not). */
+  count: number;
+  issues: NormalizedIssue[];
+  /** The resolved subset, with resolution hours attached. */
+  resolved: ResolvedIssue[];
+  avgHours: number | null;
+  medianHours: number | null;
+  p90Hours: number | null;
+};
+
+export type FacetComparisonRow = {
+  sourceId: string;
+  label: string;
+  color: string;
+  /** Size of the source population the cells were drawn from. */
+  total: number;
+  /** One cell per requested value, in the requested order. */
+  cells: FacetComparisonCell[];
+};
+
+/**
+ * For each JQL source, split its issue population by the given facet values
+ * ("우선순위 = High / Low") and compute per-cell counts and resolution-time
+ * stats. Powers the cross-JQL comparison chart: one bar (or stack) per source,
+ * one segment per selected value. Values absent from a source still produce
+ * a zero cell so every row has the same shape.
+ */
+export function buildFacetComparison(
+  perSource: ReadonlyArray<{
+    sourceId: string;
+    label: string;
+    color: string;
+    issues: ReadonlyArray<NormalizedIssue>;
+  }>,
+  valuesOf: FacetValuesOf,
+  values: ReadonlyArray<string>,
+): FacetComparisonRow[] {
+  const indexOf = new Map(values.map((v, i) => [v, i] as const));
+  return perSource.map((s) => {
+    const buckets: NormalizedIssue[][] = values.map(() => []);
+    for (const issue of s.issues) {
+      const seen = new Set<number>();
+      for (const v of valuesOf(issue)) {
+        const idx = indexOf.get(v);
+        if (idx === undefined || seen.has(idx)) continue;
+        seen.add(idx);
+        buckets[idx].push(issue);
+      }
+    }
+    const cells = values.map((value, i): FacetComparisonCell => {
+      const issues = buckets[i];
+      const resolved = withResolutionHours(issues);
+      const hours = resolved.map((r) => r.resolutionHours);
+      return {
+        value,
+        count: issues.length,
+        issues,
+        resolved,
+        avgHours: hours.length ? average(hours) : null,
+        medianHours: hours.length ? median(hours) : null,
+        p90Hours: hours.length ? percentile(hours, 90) : null,
+      };
+    });
+    return {
+      sourceId: s.sourceId,
+      label: s.label,
+      color: s.color,
+      total: s.issues.length,
+      cells,
+    };
+  });
+}
+
+/** Read the chosen metric off a comparison cell (null = no resolved issues). */
+export function facetComparisonMetric(
+  cell: FacetComparisonCell,
+  metric: FacetCompareMetric,
+): number | null {
+  switch (metric) {
+    case "count":
+      return cell.count;
+    case "avg":
+      return cell.avgHours;
+    case "median":
+      return cell.medianHours;
+    case "p90":
+      return cell.p90Hours;
+  }
 }
 
 /* -------------------------------------------------------------------------- */

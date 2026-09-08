@@ -115,3 +115,87 @@ test("server pagination stops at an exact page boundary (no extra request)", asy
   assert.equal(issues.length, 500);
   assert.equal(calls.length, 1); // first page returned total === pageSize
 });
+
+/* -------------------------------------------------------------------------- */
+/*  renderedFields expand + Cloud page size                                    */
+/* -------------------------------------------------------------------------- */
+
+const CLOUD_SERVER: JiraServerConfig = {
+  id: "c1",
+  name: "Cloud",
+  baseUrl: "https://acme.atlassian.net",
+  auth: { type: "basic", email: "a@b.c", token: "t" },
+};
+
+type CapturedBody = Record<string, unknown>;
+
+/** Mock `fetch` recording request bodies; serves DC (startAt) or Cloud (token) pages. */
+function makeCapturingFetch(data: RawJiraIssue[], bodies: CapturedBody[]) {
+  return (async (url: string | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? "{}")) as CapturedBody;
+    bodies.push(body);
+    const maxResults = Number(body.maxResults ?? 50);
+    let payload: unknown;
+    if (String(url).includes("/search/jql")) {
+      const start = body.nextPageToken ? Number(body.nextPageToken) : 0;
+      const page = data.slice(start, start + maxResults);
+      const next = start + page.length;
+      payload =
+        next < data.length
+          ? { issues: page, nextPageToken: String(next), isLast: false }
+          : { issues: page, isLast: true };
+    } else {
+      const startAt = Number(body.startAt ?? 0);
+      payload = { issues: data.slice(startAt, startAt + maxResults), total: data.length };
+    }
+    return {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => payload,
+      text: async () => "",
+    } as unknown as Response;
+  }) as typeof fetch;
+}
+
+test("renderedFields expand is sent by default and omitted when disabled (DC)", async (t) => {
+  const bodies: CapturedBody[] = [];
+  t.mock.method(globalThis, "fetch", makeCapturingFetch(dataset(10), bodies));
+  await searchIssues(DC_SERVER, "x", { limit: 100 });
+  assert.deepEqual(bodies[0].expand, ["renderedFields"]);
+
+  bodies.length = 0;
+  await searchIssues(DC_SERVER, "x", { limit: 100, renderedFields: false });
+  assert.equal("expand" in bodies[0], false);
+});
+
+test("Cloud search walks nextPageToken with 1000-issue pages and honors renderedFields:false", async (t) => {
+  const bodies: CapturedBody[] = [];
+  t.mock.method(globalThis, "fetch", makeCapturingFetch(dataset(2500), bodies));
+  const issues = await searchIssues(CLOUD_SERVER, "x", {
+    limit: 4000,
+    renderedFields: false,
+  });
+  assert.equal(issues.length, 2500);
+  assert.equal(issues[2499].key, "T-2499");
+  // 1000 + 1000 + 500 → three sequential pages, each capped at 1000.
+  assert.deepEqual(
+    bodies.map((b) => b.maxResults),
+    [1000, 1000, 1000],
+  );
+  assert.deepEqual(
+    bodies.map((b) => b.nextPageToken),
+    [undefined, "1000", "2000"],
+  );
+  assert.ok(bodies.every((b) => !("expand" in b)));
+
+  // Default keeps the legacy expand and stops at the limit.
+  bodies.length = 0;
+  const capped = await searchIssues(CLOUD_SERVER, "x", { limit: 1500 });
+  assert.equal(capped.length, 1500);
+  assert.deepEqual(
+    bodies.map((b) => b.maxResults),
+    [1000, 500],
+  );
+  assert.equal(bodies[0].expand, "renderedFields");
+});

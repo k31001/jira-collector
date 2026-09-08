@@ -76,25 +76,40 @@ async function jiraFetch(
  * `/rest/api/3/search/jql` which uses token-based pagination (nextPageToken)
  * and no longer returns a total. Server/DC still uses the legacy v2/search.
  *
- * Default page size is 500 to minimize sequential round-trips on large
- * dashboards (the old default of 100 meant 20 round-trips for 2000 issues).
- * Jira clamps to its own per-instance maximum if 500 is too high — Cloud's
- * `/search/jql` typically allows several hundred to a few thousand per
- * request; legacy Cloud `/search` capped at 100; DC honors up to ~1000.
- * The caller can override via options.maxResults.
+ * Cloud's token pagination is strictly sequential (each page's token comes
+ * from the previous response), so page size is the only lever on cold-load
+ * latency there. We ask for 1000 per page: the `/search/jql` endpoint accepts
+ * up to 5000 and silently returns fewer when many fields are requested, and
+ * the loop keeps walking `nextPageToken` until `isLast` regardless of how
+ * many issues each page actually carried. Server/DC keeps 500 (its pages run
+ * in parallel, see `searchIssuesServer`). The caller can override via
+ * options.maxResults.
+ *
+ * `renderedFields` (HTML-rendered copies of every requested field) is only
+ * useful when the caller shows comments/descriptions; callers that just
+ * aggregate (resolution dashboard) pass `renderedFields: false` to spare Jira
+ * the rendering pass and shrink the payload.
  */
+const CLOUD_PAGE_SIZE = 1000;
+const SERVER_PAGE_SIZE = 500;
+
+type SearchOptions = {
+  fields?: string[];
+  maxResults?: number;
+  limit?: number;
+  /** Include `expand=renderedFields` (default true, legacy behaviour). */
+  renderedFields?: boolean;
+  /** Called after each page with the number of issues in that page. */
+  onPage?: (pageCount: number) => void;
+};
+
 async function searchIssuesCloud(
   server: JiraServerConfig,
   jql: string,
-  options: {
-    fields?: string[];
-    maxResults?: number;
-    limit?: number;
-    onPage?: (pageCount: number) => void;
-  },
+  options: SearchOptions,
 ): Promise<RawJiraIssue[]> {
   const fields = options.fields ?? DEFAULT_FIELDS;
-  const pageSize = options.maxResults ?? 500;
+  const pageSize = options.maxResults ?? CLOUD_PAGE_SIZE;
   const limit = options.limit ?? 1000;
   const issues: RawJiraIssue[] = [];
   let nextPageToken: string | undefined;
@@ -104,8 +119,8 @@ async function searchIssuesCloud(
       jql,
       fields,
       maxResults: remaining,
-      expand: "renderedFields",
     };
+    if (options.renderedFields !== false) body.expand = "renderedFields";
     if (nextPageToken) body.nextPageToken = nextPageToken;
     const res = await jiraFetch(server, "/rest/api/3/search/jql", {
       method: "POST",
@@ -127,30 +142,26 @@ async function searchIssuesCloud(
 async function searchIssuesServer(
   server: JiraServerConfig,
   jql: string,
-  options: {
-    fields?: string[];
-    maxResults?: number;
-    limit?: number;
-    onPage?: (pageCount: number) => void;
-  },
+  options: SearchOptions,
 ): Promise<RawJiraIssue[]> {
   const fields = options.fields ?? DEFAULT_FIELDS;
-  const pageSize = options.maxResults ?? 500;
+  const pageSize = options.maxResults ?? SERVER_PAGE_SIZE;
   const limit = options.limit ?? 1000;
 
   const fetchPage = async (
     startAt: number,
     max: number,
   ): Promise<{ issues: RawJiraIssue[]; total: number }> => {
+    const body: Record<string, unknown> = {
+      jql,
+      startAt,
+      maxResults: max,
+      fields,
+    };
+    if (options.renderedFields !== false) body.expand = ["renderedFields"];
     const res = await jiraFetch(server, "/rest/api/2/search", {
       method: "POST",
-      body: JSON.stringify({
-        jql,
-        startAt,
-        maxResults: max,
-        fields,
-        expand: ["renderedFields"],
-      }),
+      body: JSON.stringify(body),
     });
     return (await res.json()) as { issues: RawJiraIssue[]; total: number };
   };
@@ -189,13 +200,7 @@ async function searchIssuesServer(
 export async function searchIssues(
   server: JiraServerConfig,
   jql: string,
-  options: {
-    fields?: string[];
-    maxResults?: number;
-    limit?: number;
-    /** Called after each page with the number of issues in that page. */
-    onPage?: (pageCount: number) => void;
-  } = {},
+  options: SearchOptions = {},
 ): Promise<RawJiraIssue[]> {
   return isCloudHost(server.baseUrl)
     ? searchIssuesCloud(server, jql, options)

@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { updateResolutionDashboard } from "@/actions/resolution-dashboards";
 import {
+  RESOLUTION_ISSUE_LIMIT,
   applyCustomFacets,
   applyFacets,
   buildFacets,
@@ -75,6 +76,9 @@ import { LongTailTable } from "./LongTailTable";
 import { AgingWipTable } from "./AgingWipTable";
 import { StatusDwellCard } from "./StatusDwellCard";
 import { PeriodComparisonCard } from "./PeriodComparisonCard";
+import { FacetComparisonChart } from "./FacetComparisonChart";
+
+const LIMIT_LABEL = RESOLUTION_ISSUE_LIMIT.toLocaleString("ko-KR");
 
 type Props = {
   dashboardId: string;
@@ -327,14 +331,22 @@ export function ResolutionDashboardView({
     [rawCustomFacets, ratioConfigs],
   );
 
+  // Set by the 새로고침 button so the next queryFn run asks the server to skip
+  // its cache (which otherwise keeps the payload for the dashboard's refresh
+  // interval — reloads are instant, but "refresh" must mean fresh).
+  const bypassCacheRef = React.useRef(false);
+
   const query = useQuery<ResolutionDashboardIssuesResult>({
     queryKey: ["resolution-issues", dashboardId, referencedFieldsKey],
     queryFn: async () => {
       setLoadProgress({ fetched: 0, planned: null, startedAt: Date.now() });
       setStreamingSources([]);
-      const res = await fetch(`/api/resolution-time/${dashboardId}/issues`, {
-        cache: "no-store",
-      });
+      const bypass = bypassCacheRef.current;
+      bypassCacheRef.current = false;
+      const res = await fetch(
+        `/api/resolution-time/${dashboardId}/issues${bypass ? "?bypass=1" : ""}`,
+        { cache: "no-store" },
+      );
       if (!res.ok || !res.body) throw new Error("이슈 fetch 실패");
 
       // The route streams NDJSON: plan/progress*, a `source` per source, then
@@ -343,6 +355,10 @@ export function ResolutionDashboardView({
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buf = "";
+      // A `source` line for 4,000 issues is several MB and arrives over many
+      // chunks; resume the newline scan where the previous chunk ended
+      // instead of rescanning the whole buffer per chunk.
+      let scanFrom = 0;
       const collected: (ResolutionSourceResult | undefined)[] = [];
       let fetchedAt: number | null = null;
       for (;;) {
@@ -350,9 +366,10 @@ export function ResolutionDashboardView({
         if (done) break;
         buf += decoder.decode(value, { stream: true });
         let nl: number;
-        while ((nl = buf.indexOf("\n")) >= 0) {
+        while ((nl = buf.indexOf("\n", scanFrom)) >= 0) {
           const line = buf.slice(0, nl).trim();
           buf = buf.slice(nl + 1);
+          scanFrom = 0;
           if (!line) continue;
           let ev: StreamEvent;
           try {
@@ -378,6 +395,7 @@ export function ResolutionDashboardView({
             throw new Error(ev.message);
           }
         }
+        scanFrom = buf.length;
       }
       if (fetchedAt === null) throw new Error("이슈 데이터를 받지 못했습니다");
       return {
@@ -506,6 +524,68 @@ export function ResolutionDashboardView({
     [visiblePerSource, histogramBucketHours],
   );
 
+  // Prop arrays for the heavier cards, memoized on `visiblePerSource` so a
+  // re-render that doesn't change the issue set (window/bucket edits, filter
+  // panel toggles, dialog open/close) doesn't hand each card a fresh array
+  // and force its flatten/sort/aggregate memos to run again.
+  const periodSources = React.useMemo(
+    () =>
+      visiblePerSource.map((ps) => ({
+        sourceId: ps.source.sourceId,
+        label: ps.source.label,
+        color: ps.source.color,
+        resolved: ps.resolved,
+      })),
+    [visiblePerSource],
+  );
+  const ratioSources = React.useMemo(
+    () =>
+      visiblePerSource.map((ps) => ({
+        sourceId: ps.source.sourceId,
+        label: ps.source.label,
+        color: ps.source.color,
+        issues: shiftIssuesTime(
+          ps.filteredIssues,
+          ps.source.timeOffsetDays ?? 0,
+        ),
+      })),
+    [visiblePerSource],
+  );
+  const compareSources = React.useMemo(
+    () =>
+      visiblePerSource.map((ps) => ({
+        sourceId: ps.source.sourceId,
+        label: ps.source.label,
+        color: ps.source.color,
+        issues: ps.filteredIssues,
+      })),
+    [visiblePerSource],
+  );
+  const agingSources = React.useMemo(
+    () =>
+      visiblePerSource.map((ps) => ({
+        sourceId: ps.source.sourceId,
+        sourceLabel: ps.source.label,
+        sourceColor: ps.source.color,
+        aging: ps.aging,
+      })),
+    [visiblePerSource],
+  );
+  const longTailSources = React.useMemo(
+    () =>
+      visiblePerSource.map((ps) => ({
+        sourceId: ps.source.sourceId,
+        sourceLabel: ps.source.label,
+        sourceColor: ps.source.color,
+        resolved: ps.resolved,
+      })),
+    [visiblePerSource],
+  );
+  const visibleSourceIds = React.useMemo(
+    () => visiblePerSource.map((ps) => ps.source.sourceId),
+    [visiblePerSource],
+  );
+
   function onBinSelected(info: {
     sourceLabel: string;
     binLabel: string;
@@ -516,6 +596,11 @@ export function ResolutionDashboardView({
       binLabel: info.binLabel,
       issues: info.issues,
     });
+  }
+
+  function onRefresh() {
+    bypassCacheRef.current = true;
+    void query.refetch();
   }
 
   function patchFilter(sourceId: string, next: FacetSelection) {
@@ -543,7 +628,7 @@ export function ResolutionDashboardView({
         onHistogramBucketHoursChange={setHistogramBucketHours}
         isFetching={query.isFetching}
         fetchedAt={query.data?.fetchedAt}
-        onRefresh={() => query.refetch()}
+        onRefresh={onRefresh}
       />
 
       {query.isFetching &&
@@ -608,10 +693,10 @@ export function ResolutionDashboardView({
                 <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
                 <div className="space-y-0.5">
                   <p className="font-medium text-amber-700 dark:text-amber-500">
-                    분석 한도(2,000개)에 도달했습니다
+                    분석 한도({LIMIT_LABEL}개)에 도달했습니다
                   </p>
                   <p className="text-muted-foreground">
-                    다음 JQL은 최신 2,000개 이슈만 분석됩니다:{" "}
+                    다음 JQL은 최신 {LIMIT_LABEL}개 이슈만 분석됩니다:{" "}
                     <span className="font-medium">
                       {sources
                         .filter((s) => s.capped)
@@ -640,12 +725,7 @@ export function ResolutionDashboardView({
 
           <PeriodComparisonCard
             windowDays={windowDays}
-            perSource={visiblePerSource.map((ps) => ({
-              sourceId: ps.source.sourceId,
-              label: ps.source.label,
-              color: ps.source.color,
-              resolved: ps.resolved,
-            }))}
+            perSource={periodSources}
           />
 
           <TimeSeriesChart
@@ -668,15 +748,7 @@ export function ResolutionDashboardView({
             <RatioAnalysisChart
               key={rc.id}
               config={rc}
-              perSource={visiblePerSource.map((ps) => ({
-                sourceId: ps.source.sourceId,
-                label: ps.source.label,
-                color: ps.source.color,
-                issues: shiftIssuesTime(
-                  ps.filteredIssues,
-                  ps.source.timeOffsetDays ?? 0,
-                ),
-              }))}
+              perSource={ratioSources}
               windowDays={windowDays}
               bucket={timeBucket}
               visible={visibleJqls}
@@ -686,27 +758,20 @@ export function ResolutionDashboardView({
             histograms={histograms}
             onBinSelected={onBinSelected}
           />
-          <AgingWipTable
+          <FacetComparisonChart
             dashboardId={dashboardId}
-            perSource={visiblePerSource.map((ps) => ({
-              sourceId: ps.source.sourceId,
-              sourceLabel: ps.source.label,
-              sourceColor: ps.source.color,
-              aging: ps.aging,
-            }))}
+            perSource={compareSources}
+            customFacets={compiledCustomFacets}
+            onSelect={setSelection}
           />
+          <AgingWipTable dashboardId={dashboardId} perSource={agingSources} />
           <StatusDwellCard
             dashboardId={dashboardId}
-            visibleSourceIds={visiblePerSource.map((ps) => ps.source.sourceId)}
+            visibleSourceIds={visibleSourceIds}
           />
           <LongTailTable
             dashboardId={dashboardId}
-            perSource={visiblePerSource.map((ps) => ({
-              sourceId: ps.source.sourceId,
-              sourceLabel: ps.source.label,
-              sourceColor: ps.source.color,
-              resolved: ps.resolved,
-            }))}
+            perSource={longTailSources}
           />
         </>
       )}
@@ -836,6 +901,18 @@ function PerSourceFilters({
     return n;
   }, [filters, customFilters]);
 
+  // Facet counts per source. Recomputed only when the issue set changes (or
+  // the panel opens) — not on every filter click, which re-renders this
+  // component with the same sources.
+  const facetsBySource = React.useMemo(() => {
+    const m = new Map<string, ReturnType<typeof buildFacets>>();
+    if (!expanded) return m;
+    for (const s of sources) {
+      if (s.issues.length > 0) m.set(s.sourceId, buildFacets(s.issues));
+    }
+    return m;
+  }, [sources, expanded]);
+
   return (
     <Card>
       <CardContent className="p-0">
@@ -865,8 +942,8 @@ function PerSourceFilters({
         {expanded && (
           <div className="space-y-2 border-t p-3">
             {sources.map((s) => {
-              if (s.issues.length === 0) return null;
-              const facets = buildFacets(s.issues);
+              const facets = facetsBySource.get(s.sourceId);
+              if (!facets) return null;
               const value = filters[s.sourceId] ?? {};
               const customValue = customFilters[s.sourceId] ?? {};
               return (
